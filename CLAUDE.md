@@ -56,6 +56,19 @@ quotes, semicolons, 110 print width, `es5` trailing commas, `arrowParens: avoid`
 (`.eslintrc.yml`) extends `eslint:recommended` + `@typescript-eslint` + `prettier`; `no-unused-vars`,
 `no-undef`, and `no-unreachable` are turned off (relied on instead by the JSDoc/tsc typecheck).
 
+## Git workflow
+
+Feature work happens on a branch and merges with `--no-ff`, deliberately. The Phase 1 roadmap
+([docs/roadmap/phase-1.md](docs/roadmap/phase-1.md)) has stages that may need backing out wholesale, and a
+merge commit makes that `git revert -m 1 <merge>` instead of hand-picking which commits belonged to the
+stage. `git log --first-parent` gives the flat one-line-per-unit view when that's what you want.
+
+- Only `--no-ff` a branch that is a coherent multi-commit unit. A single-commit branch should fast-forward
+  — a merge commit wrapping one commit is noise.
+- Every commit on a branch should be green on its own, so `git bisect` landing inside a branch still means
+  something. This matters more than usual here: Stage 0's determinism harness exists to catch regressions
+  that bisect then has to localize.
+
 ## Architecture
 
 **Plain JS + JSDoc, typechecked like TypeScript.** There are no `.ts` files in `src/`; types come from
