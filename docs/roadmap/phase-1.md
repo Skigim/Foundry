@@ -55,6 +55,33 @@ detectable.
   simulation output, the new hash is part of that change's review. Never regenerate as a reflex to make
   CI green.
 
+**Future-proofing constraints.** This stage is written before the build swap and the TypeScript migration,
+so it must be built so neither invalidates it:
+
+- **Hash the serializer's output, not in-memory state.** `SavegameSerializer.generateDumpFromGameRoot()`
+  (`src/js/savegame/savegame_serializer.js`) is a stable, versioned contract; live entity/component objects
+  are not. A hash that walks object internals moves on Stage 2 renames and Stage 4 code moves for
+  non-semantic reasons — it cries wolf, then gets disabled. Hash a **subset** of the dump: `map`,
+  `entityMgr`, `entities`, `beltPaths`, `hubGoals`, `time`, `gameMode`. Explicitly exclude `camera`,
+  `pinnedShapes`, `waypoints`, and `modExtraData`, which the same dump carries but which are UI/render
+  state per the policy above.
+- **Record draw calls at the render-context boundary, not the system boundary.** Stage 3 deletes the
+  per-system draw structure, so a recording keyed on "which `GameSystem` drew this" is worthless
+  afterward. Record operations against `DrawParameters` / the 2D context instead. Expect Stage 3 to
+  *legitimately* reorder draws — the assertion is "nothing vanished or moved," not "identical sequence."
+- **Pick a TypeScript-native, bundler-independent test runner.** Routing tests through the current webpack
+  pipeline means Stage 1 invalidates them; a JS-only setup means Stage 2 does. One choice avoids both.
+- **Record the build configuration alongside each benchmark number.** Stage 1 changes optimization
+  characteristics, so numbers taken before and after it are not directly comparable.
+
+**Known obstacle:** `require.context` (a webpack-only API) is called at registration time in
+`src/js/game/component_registry.js:56` and `src/js/mods/modloader.js:114`, so the component registry cannot
+be loaded outside a webpack-compatible bundler as-is. Options: shim it, pick a Stage 1 bundler that retains
+webpack compatibility (Rspack does — a point in its favor), or drop the assert. If it turns out the
+simulation cannot be loaded at all without the full app bundle, that is not merely an obstacle: it is an
+early, cheap measurement of how entangled the engine/content boundary really is — Stage 4's problem
+surfacing at the best possible time.
+
 **Note — this stage validates the project's premise.** The README states "the simulation should always
 produce identical results from identical inputs." If golden-save hashing turns out to be unstable across
 runs or platforms, that principle is not currently true, and that is a finding worth having *before*
