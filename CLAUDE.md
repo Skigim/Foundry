@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**Starting a session?** Read [docs/handoff.md](docs/handoff.md) first — it carries the current state,
+settled decisions, the next step, and constraints already learned the hard way. Keep it updated as work
+progresses.
+
 ## Project
 
 Foundry is a fork of shapez.io (Shapez Classic) being evolved from a single game into a reusable engine
