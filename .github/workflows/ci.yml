@@ -46,6 +46,21 @@ jobs:
                   cd ..
                   yarn tslint
 
+    test:
+        name: test
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout repo
+              uses: actions/checkout@v2
+
+            - name: Setup Node
+              uses: actions/setup-node@v2-beta
+              with:
+                  node-version: 22.x
+
+            - name: Run tests
+              run: yarn test
+
     yaml-lint:
         name: yaml-lint
         runs-on: ubuntu-latest
