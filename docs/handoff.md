@@ -61,10 +61,9 @@ Learned by running code, not by assuming. Each one has already cost time once.
 
 ## Current state
 
-`origin/master` at `a253b2dd` as of last session; `phase-1/stage-0-ci` (2 commits, not yet merged) sits on
-top adding the CI wiring below. Working tree clean.
+`origin/master` at `b8198360`. Working tree clean.
 
-Stage 0, artifact 1 of 4 complete:
+Stage 0, artifact 1 of 4 complete, **and now confirmed cross-platform**:
 
 - `test/rng.determinism.test.js` — 7 tests, `node:test` + `node:assert`, zero new dependencies. Covers
   same-seed equality, different-seed inequality, numeric/string seed equivalence, `reseed`/`setSeed`, and
@@ -73,34 +72,46 @@ Stage 0, artifact 1 of 4 complete:
   make CI pass — a change there means determinism broke, and that is the finding, not an obstacle.
 
 ```bash
-yarn test    # now equivalent to: node --test "test/**/*.test.js"
+yarn test    # equivalent to: node --test "test/**/*.test.js"
 ```
 
-`yarn test` now runs in CI too, on a dedicated `test` job (`.github/workflows/ci.yml`) pinned to Node 22.x
-— the version the seed-42 references were generated on — and running on `ubuntu-latest`, i.e. Linux. The
-job skips `yarn install`: the test script has no dependencies of its own. The existing lint/tslint job stays
-on Node 16.x since its webpack 4/babel toolchain wasn't re-verified against anything newer.
+`yarn test` runs in CI on a dedicated `test` job (`.github/workflows/ci.yml`) pinned to Node 22.x — the
+version the seed-42 references were generated on — on `ubuntu-latest`. **CI run
+[31230191451](https://github.com/Skigim/Foundry/actions/runs/31230191451) confirms it: `test` job passed in
+13s on Linux.** The seed-42 values are now genuine cross-platform evidence, not just a same-machine check.
+The job skips `yarn install` — the test script has no dependencies of its own.
+
+**The pre-existing `CI` job (lint + tslint) failed on that same run, at the `TSLint` step** — this is
+unrelated to the work above (confirmed by reproducing the identical `tsc` errors locally on this same
+commit: `mods/mod_interface.js:53,58` rest-element-in-tuple, `platform/browser/game_analytics.js:121`
+missing `setAbt` on `Window`, `states/main_menu.js:562` and `states/preload.js:330` missing `innerText` on
+`Element`, `states/preload.js:97` wrong arg count, `states/preload.js:331` missing `style` on `Element`).
+The fork Actions gate (see below) meant nobody had actually seen this fail in CI until now — it may have
+been broken for a while. Not caused by, and not fixed by, this session's work.
 
 Remaining Stage 0 artifacts: golden-save simulation hash, draw-call recording, boot smoke test.
 
 ## Next step
 
-`phase-1/stage-0-ci` merged (`97c98a40`) and was pushed to `origin/master`. No workflow run fired: GitHub's
-Actions API on `Skigim/Foundry` showed the `CI` workflow registered and `state: "active"` but a total run
-count of 0 going back to the workflow's creation, on any prior push. This is the fork Actions gate —
-GitHub disables `push`/`pull_request` triggers on forked repos until the owner manually enables them once
-via the "I understand my workflows, go ahead and enable them" button on the repo's Actions tab; there's no
-API/CLI path around it. This commit exists to give a fresh push something to trigger against once that's
-been clicked.
+Decide whether to fix the pre-existing `TSLint` failures before continuing Stage 0, or track them
+separately and proceed. They block a fully green CI, but they predate this session and touch files
+(`mod_interface.js`, `game_analytics.js`, `main_menu.js`, `preload.js`) unrelated to Stage 0's remaining
+artifacts.
 
-Move on to the next Stage 0 artifact once a green run is confirmed — golden-save simulation hash is next in
-the doc's order, but it's blocked on the `require.context` question below.
+Once decided, move on to the next Stage 0 artifact — golden-save simulation hash is next in the doc's
+order, but it's blocked on the `require.context` question below.
+
+**Aside, resolved:** GitHub's fork Actions gate (disables `push`/`pull_request` triggers on forks until the
+owner clicks through once on the Actions tab) was blocking every run on `Skigim/Foundry` — confirmed via the
+Actions API showing 0 total runs despite the workflow being registered and `active`. Cleared as of this
+session; no further action needed.
 
 ## Open questions
 
-- **Cross-platform determinism is asserted by CI config, not yet observed.** The `test` job is wired up and
-  passes locally under the same Node 22.x it'll run as, but no CI run has executed on GitHub's Linux runners
-  yet as of this note. Resolved once that run is watched.
+- ~~Cross-platform determinism unproven~~ — **resolved.** `test` job passed on Linux/Node 22.x in CI run
+  31230191451.
+- **The pre-existing `TSLint` failure needs a decision** (see Next step) — fix now, or track and defer.
+  Unknown how long it's been broken, since the fork Actions gate meant no CI run had surfaced it before.
 - **The browser-globals shim decision is unmade**, and it gates any test touching code that calls `assert`
   — including `RandomNumberGenerator.nextIntRange`/`nextRange`.
 - **The golden-save hash is blocked** on the `require.context` constraint above. Options: shim it, pick a
