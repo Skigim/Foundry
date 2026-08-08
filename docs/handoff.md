@@ -61,9 +61,12 @@ Learned by running code, not by assuming. Each one has already cost time once.
 
 ## Current state
 
-`origin/master` at `b8198360`. Working tree clean.
+`origin/master` at `01a766fe`. Working tree clean. CI run
+[31230953714](https://github.com/Skigim/Foundry/actions/runs/31230953714) is **fully green** — `test`,
+`yaml-lint`, and `CI` (lint + tslint) all passed. First clean run this repo has ever had, as far as the
+Actions API history goes back.
 
-Stage 0, artifact 1 of 4 complete, **and now confirmed cross-platform**:
+Stage 0, artifact 1 of 4 complete, **and confirmed cross-platform**:
 
 - `test/rng.determinism.test.js` — 7 tests, `node:test` + `node:assert`, zero new dependencies. Covers
   same-seed equality, different-seed inequality, numeric/string seed equivalence, `reseed`/`setSeed`, and
@@ -76,44 +79,34 @@ yarn test    # equivalent to: node --test "test/**/*.test.js"
 ```
 
 `yarn test` runs in CI on a dedicated `test` job (`.github/workflows/ci.yml`) pinned to Node 22.x — the
-version the seed-42 references were generated on — on `ubuntu-latest`. **CI run
-[31230191451](https://github.com/Skigim/Foundry/actions/runs/31230191451) confirms it: `test` job passed in
-13s on Linux.** The seed-42 values are now genuine cross-platform evidence, not just a same-machine check.
-The job skips `yarn install` — the test script has no dependencies of its own.
+version the seed-42 references were generated on — on `ubuntu-latest`. Passing there means the seed-42
+values are genuine cross-platform evidence, not just a same-machine check. The job skips `yarn install` —
+the test script has no dependencies of its own.
 
-**The pre-existing `CI` job (lint + tslint) failed on that same run, at the `TSLint` step** — this is
-unrelated to the work above (confirmed by reproducing the identical `tsc` errors locally on this same
-commit: `mods/mod_interface.js:53,58` rest-element-in-tuple, `platform/browser/game_analytics.js:121`
-missing `setAbt` on `Window`, `states/main_menu.js:562` and `states/preload.js:330` missing `innerText` on
-`Element`, `states/preload.js:97` wrong arg count, `states/preload.js:331` missing `style` on `Element`).
-The fork Actions gate (see below) meant nobody had actually seen this fail in CI until now — it may have
-been broken for a while. Not caused by, and not fixed by, this session's work.
+**The pre-existing `TSLint` failures are fixed** (`phase-1/stage-0-tslint-fix`, fast-forwarded into master
+at `01a766fe` — single commit, so no `--no-ff`). All 7 were type-only JSDoc/tsc issues, unrelated to the
+CI-wiring work: `mod_interface.js`'s `afterPrams`/`extendsPrams` typedefs used an invalid spread-tuple
+(fixed to match the sibling `beforePrams` typedef's non-spread shape), `game_analytics.js` assigned
+`window.setAbt` without declaring it (added to `globals.d.ts`'s ambient `Window` interface), and
+`main_menu.js`/`preload.js` treated `querySelector` results as `HTMLElement` without saying so (added
+`@type` annotations at the declarations). One real behavior change included: `preload.js`'s first
+`setStatus("Booting")` call now passes `0` for `progress` explicitly, like every other call site already
+did — previously this set `NaN%` as the boot progress bar's width. Everything else is compile-time only;
+JSDoc types are stripped before the real bundle ships.
 
 Remaining Stage 0 artifacts: golden-save simulation hash, draw-call recording, boot smoke test.
 
 ## Next step
 
-Decide whether to fix the pre-existing `TSLint` failures before continuing Stage 0, or track them
-separately and proceed. They block a fully green CI, but they predate this session and touch files
-(`mod_interface.js`, `game_analytics.js`, `main_menu.js`, `preload.js`) unrelated to Stage 0's remaining
-artifacts.
-
-Once decided, move on to the next Stage 0 artifact — golden-save simulation hash is next in the doc's
-order, but it's blocked on the `require.context` question below.
-
-**Aside, resolved:** GitHub's fork Actions gate (disables `push`/`pull_request` triggers on forks until the
-owner clicks through once on the Actions tab) was blocking every run on `Skigim/Foundry` — confirmed via the
-Actions API showing 0 total runs despite the workflow being registered and `active`. Cleared as of this
-session; no further action needed.
+Start the golden-save simulation hash artifact. It's blocked on the `require.context` question below —
+resolving that (shim it, pick a Stage 1 bundler that retains webpack compatibility, or drop the assert) is
+the actual next decision, not busywork before it.
 
 ## Open questions
 
-- ~~Cross-platform determinism unproven~~ — **resolved.** `test` job passed on Linux/Node 22.x in CI run
-  31230191451.
-- **The pre-existing `TSLint` failure needs a decision** (see Next step) — fix now, or track and defer.
-  Unknown how long it's been broken, since the fork Actions gate meant no CI run had surfaced it before.
-- **The browser-globals shim decision is unmade**, and it gates any test touching code that calls `assert`
-  — including `RandomNumberGenerator.nextIntRange`/`nextRange`.
 - **The golden-save hash is blocked** on the `require.context` constraint above. Options: shim it, pick a
   Stage 1 bundler that retains webpack compatibility, or drop the assert.
-- Local branch `phase-1/stage-0-harness` is merged but not deleted.
+- **The browser-globals shim decision is unmade**, and it gates any test touching code that calls `assert`
+  — including `RandomNumberGenerator.nextIntRange`/`nextRange`.
+- Local branches `phase-1/stage-0-harness` and `phase-1/stage-0-ci` are merged but not deleted; add
+  `phase-1/stage-0-tslint-fix` to that list.
