@@ -85,14 +85,16 @@ Remaining Stage 0 artifacts: golden-save simulation hash, draw-call recording, b
 
 ## Next step
 
-Merge `phase-1/stage-0-ci` into `master` with `--no-ff` (first real use of that convention), then confirm
-the `test` job is actually green on GitHub's Linux runners, not just locally — that's the step that turns
-the seed-42 reference values from a same-machine repeatability check into cross-platform evidence. If it's
-red on Linux and green on Windows, that's the finding the Stage 0 roadmap doc calls out, not a bug to
-paper over.
+`phase-1/stage-0-ci` merged (`97c98a40`) and was pushed to `origin/master`. No workflow run fired: GitHub's
+Actions API on `Skigim/Foundry` showed the `CI` workflow registered and `state: "active"` but a total run
+count of 0 going back to the workflow's creation, on any prior push. This is the fork Actions gate —
+GitHub disables `push`/`pull_request` triggers on forked repos until the owner manually enables them once
+via the "I understand my workflows, go ahead and enable them" button on the repo's Actions tab; there's no
+API/CLI path around it. This commit exists to give a fresh push something to trigger against once that's
+been clicked.
 
-After that, move on to the next Stage 0 artifact — golden-save simulation hash is next in the doc's order,
-but it's blocked on the `require.context` question below.
+Move on to the next Stage 0 artifact once a green run is confirmed — golden-save simulation hash is next in
+the doc's order, but it's blocked on the `require.context` question below.
 
 ## Open questions
 
