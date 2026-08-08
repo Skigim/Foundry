@@ -61,7 +61,8 @@ Learned by running code, not by assuming. Each one has already cost time once.
 
 ## Current state
 
-`origin/master` at `a253b2dd`. Working tree clean.
+`origin/master` at `a253b2dd` as of last session; `phase-1/stage-0-ci` (2 commits, not yet merged) sits on
+top adding the CI wiring below. Working tree clean.
 
 Stage 0, artifact 1 of 4 complete:
 
@@ -72,25 +73,32 @@ Stage 0, artifact 1 of 4 complete:
   make CI pass — a change there means determinism broke, and that is the finding, not an obstacle.
 
 ```bash
-node --test "test/**/*.test.js"
+yarn test    # now equivalent to: node --test "test/**/*.test.js"
 ```
+
+`yarn test` now runs in CI too, on a dedicated `test` job (`.github/workflows/ci.yml`) pinned to Node 22.x
+— the version the seed-42 references were generated on — and running on `ubuntu-latest`, i.e. Linux. The
+job skips `yarn install`: the test script has no dependencies of its own. The existing lint/tslint job stays
+on Node 16.x since its webpack 4/babel toolchain wasn't re-verified against anything newer.
 
 Remaining Stage 0 artifacts: golden-save simulation hash, draw-call recording, boot smoke test.
 
 ## Next step
 
-Add a `test` script to `package.json` and wire `node --test` into `.github/workflows/ci.yml` (currently
-lint + tslint + yamllint only).
+Merge `phase-1/stage-0-ci` into `master` with `--no-ff` (first real use of that convention), then confirm
+the `test` job is actually green on GitHub's Linux runners, not just locally — that's the step that turns
+the seed-42 reference values from a same-machine repeatability check into cross-platform evidence. If it's
+red on Linux and green on Windows, that's the finding the Stage 0 roadmap doc calls out, not a bug to
+paper over.
 
-This matters beyond convenience: everything verified so far is Windows-only, so the seed-42 reference
-values are not yet evidence of cross-platform determinism. CI running on Linux is what converts them from a
-future drift guard into an actual measurement. It is a coherent two-commit unit and the first real use of
-the `--no-ff` convention.
+After that, move on to the next Stage 0 artifact — golden-save simulation hash is next in the doc's order,
+but it's blocked on the `require.context` question below.
 
 ## Open questions
 
-- **Cross-platform determinism is unproven.** Verified on Windows/Node 22 only, within and across
-  processes. Resolved by the next step.
+- **Cross-platform determinism is asserted by CI config, not yet observed.** The `test` job is wired up and
+  passes locally under the same Node 22.x it'll run as, but no CI run has executed on GitHub's Linux runners
+  yet as of this note. Resolved once that run is watched.
 - **The browser-globals shim decision is unmade**, and it gates any test touching code that calls `assert`
   — including `RandomNumberGenerator.nextIntRange`/`nextRange`.
 - **The golden-save hash is blocked** on the `require.context` constraint above. Options: shim it, pick a
