@@ -104,6 +104,12 @@ the actual next decision, not busywork before it.
 
 ## Open questions
 
+- **Reverse Factory game mode idea is parked**, not started —
+  [docs/superpowers/specs/2026-08-12-reverse-factory-poc-design.md](superpowers/specs/2026-08-12-reverse-factory-poc-design.md)
+  has the concept, prior-art check, and an engine-feasibility mapping (most of the core loop already exists
+  as buildings: constant producer, cutters, goal acceptor with per-instance target shape). Deliberately not
+  picked up while Phase 1 Stage 0 is in flight; resume the brainstorming-skill flow from that doc's
+  checkpoint when there's room for it, don't restart from scratch.
 - **The golden-save hash is blocked** on the `require.context` constraint above. Options: shim it, pick a
   Stage 1 bundler that retains webpack compatibility, or drop the assert.
 - **The browser-globals shim decision is unmade**, and it gates any test touching code that calls `assert`
