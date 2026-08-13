@@ -289,9 +289,26 @@ export async function loadFixtureGame(page, fixture) {
  * the state's own stage10GameRunning() directly. That method only flips the
  * stage, dispatches signals, and resizes — it does not tick — so forcing it
  * ourselves reproduces the natural transition's visible effects without its
- * real-timed side tick. Because everything happens inside one synchronous
- * page.evaluate(), there is no window for a real animation frame to land in
- * between.
+ * real-timed side tick. Because both actions happen inside that one
+ * synchronous page.evaluate(), the primary race — the spurious tick that
+ * would otherwise fall through in the same onRender callback that flips the
+ * stage — is fully closed: there is no window for a real animation frame to
+ * land between "flip the stage" and "freeze the loop" once we're the one
+ * doing the flipping.
+ *
+ * That does not cover every window, though. Between the moment
+ * waitForFunction's poll first *observes* `stage === "s7_warmup"` in the
+ * page and the moment the follow-up evaluate() call above actually executes
+ * there, there's an unavoidable IPC round-trip back to Node and out again.
+ * On a slow or loaded runner, a real animation frame could in principle
+ * land in that gap and let the natural transition (and its spurious tick)
+ * fire first, before this function's evaluate() ever runs. This narrower
+ * window is not closed by timing — it's closed by the `alreadyRunning`
+ * check below: if the natural transition wins that race, this function
+ * throws instead of silently proceeding on a state that already contains an
+ * uncontrolled tick. So the guarantee this function actually provides is
+ * "either no spurious tick occurred, or you get a loud failure" — not "a
+ * spurious tick is provably impossible."
  * @param {import("playwright").Page} page
  * @returns {Promise<void>}
  */
