@@ -209,6 +209,10 @@ const SIMULATION_ALTERING_DEBUG_FLAGS = [
     "disableEjectorProcessing",
     "disableLogicTicks",
     "framePausesBetweenTicks",
+    "rewardsInstant",
+    "disableUnlockDialog",
+    "externalModUrl",
+    "manualTickOnly",
 ];
 
 /**
