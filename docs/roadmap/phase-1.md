@@ -40,6 +40,12 @@ detectable.
 4. **Boot smoke test.** The *built* artifact launches, loads a save, ticks, and does not crash. Exists
    specifically for Stage 1, where failures are bundle-level rather than logic-level.
 
+**Status.** Artifact 4 landed 2026-08-12: `test/browser/boot.smoke.test.js`, running against a real dev
+bundle in a real browser via `test/browser/harness.js`, enforced by CI's `browser-test` job. The substrate
+is specified in
+[docs/superpowers/specs/2026-08-12-stage0-browser-harness-design.md](../superpowers/specs/2026-08-12-stage0-browser-harness-design.md).
+Artifacts 1, 2 and 3 remain outstanding.
+
 **Anti-bloat policy (binding for all of Phase 1):**
 
 - **No unit tests for game logic.** Per-building or per-system unit tests would need updating on every

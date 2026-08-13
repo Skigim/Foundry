@@ -11,7 +11,7 @@ Living context for picking up work on Foundry in a fresh session. To use it, poi
 | Empirical constraints | Something is learned by running code. Append-only; never delete a constraint without proving it no longer holds. |
 | Current state / Next step / Open questions | Every session. |
 
-Last updated: 2026-08-12
+Last updated: 2026-08-13
 
 ---
 
@@ -81,9 +81,35 @@ Learned by running code, not by assuming. Each one has already cost time once.
   Local Node here is 22.
 - **`imgres.buildAtlas` fails silently.** `gulp/image-resources.js:75-113` wraps the task in
   `try { ... } catch { console.warn(...) }` and then calls `cb()` — a *successful* callback. Missing Java or a
-  failed 22MB jar download yields a "successful" build with no sprites. It has also **never run in this
-  repo's CI** (the `CI` job only runs `translations.fullBuild` + `localConfig.findOrCreate`), so atlas-on-ubuntu
-  is unproven.
+  failed 22MB jar download yields a "successful" build with no sprites. Still true, and still worth guarding
+  against; but see the next bullet — it is no longer unproven on ubuntu.
+- **The atlas does build on `ubuntu-latest`.** Measured 2026-08-12 in run
+  [31660769430](https://github.com/Skigim/Foundry/actions/runs/31660769430), the first time `imgres.buildAtlas`
+  has ever executed in this repo's CI. Produced three real variants (`atlas0_hq/mq/lq` × `.atlas`/`.json`/`.png`,
+  1.9MB/951KB/389KB), and `Building atlas failed` appears zero times in the log, so the silent-failure path was
+  not taken. Specifics worth not re-deriving: the runner ships **OpenJDK 17.0.19** preinstalled, so no
+  `setup-java` step is needed; the jar downloads via the first fallback (`wget`); and `actions/cache` on
+  `gulp/runnable-texturepacker.jar` works, so only the first run pays the 22MB download. **Whole job: 2m20s
+  cold**, against the 5–10 min the design budgeted — and that is with the download, before any Playwright step.
+- **A silently-empty atlas does not surface as a build error later either.** `states/preload.js:211` returns a
+  promise that *never resolves* when resource loading fails, so the game hangs at "Downloading resources"
+  rather than throwing. Any browser test must assert the atlas is non-empty before launching, or its failure
+  mode is an unexplained timeout.
+- **`utils.cleanImageBuildFolder` cleans the wrong directory.** It targets `gulp/res_built`
+  (`gulpfile.js:88`, via `__dirname`), but the atlas is written to the repo-root `res_built`
+  (`image-resources.js:78`, via a cwd-relative `../res_built/atlas`). So the atlas is never actually cleaned
+  and a stale local one can mask a broken build. CI is unaffected — fresh checkout every run.
+- **`gh` defaults to `tobspr-games/shapez.io` until told otherwise.** Both `origin` (Skigim/Foundry) and
+  `upstream` (tobspr-games/shapez.io) are configured, and with no default set, bare `gh` commands target
+  *upstream* — a `gh pr create` here aimed a PR at tobspr's repo and was rejected only because there were no
+  commits between the two. Fixed on this clone with `gh repo set-default Skigim/Foundry` (2026-08-12), which
+  writes `remote.origin.gh-resolved` to `.git/config`. **That is per-clone and not committed**, so a fresh
+  clone, another machine, or a git worktree with its own config will hit it again. Run it once after cloning,
+  or pass `--repo Skigim/Foundry` explicitly.
+- **CI's pinned actions are living on borrowed time.** Every job now annotates: `actions/checkout@v2`,
+  `actions/setup-node@v2-beta` and `actions/cache@v4` target Node 20, which is deprecated and is being *forced*
+  onto Node 24 by the runner. Nothing is broken yet. Bumping them is its own small change, deliberately not
+  bundled into Stage 0 work.
 - **`window.shapez` does not exist in web prod builds.** `exposeExports()` is gated on
   `G_IS_DEV || G_IS_STANDALONE` (`modloader.js:111`) and `gulp/webpack.production.config.js:27` hardcodes
   `G_IS_DEV: "false"`. Anything driving the game from outside must target a dev bundle.
@@ -100,16 +126,46 @@ Learned by running code, not by assuming. Each one has already cost time once.
 - **`require.context` (webpack-only) is called at registration time** in `component_registry.js:56` and
   `modloader.js:114`, so the component registry cannot load outside a webpack-compatible bundler. This
   blocks the golden-save hash artifact and is a point in Rspack's favor for Stage 1.
+- **`browser-test`'s full duration, including the actual Playwright boot test, is 2m24s.** Measured in CI run
+  [31664495889](https://github.com/Skigim/Foundry/actions/runs/31664495889) — the first run where the job
+  runs `yarn test:browser` rather than stopping after the atlas/bundle build. All four jobs green in that
+  run: `CI` 1m55s, `test` 12s, `browser-test` 2m24s, `yaml-lint` 31s — comfortably under the design's 5–10
+  minute budget.
+- **Local `gulp build.prepare.dev` needs a system `ffmpeg` on PATH.** The `sounds.dev` gulp task shells out to
+  it via `fluent-ffmpeg`; this Windows dev machine had none installed. CI is unaffected — both `browser-test`
+  and the `CI`/`setup` job already `apt-get install ffmpeg` explicitly.
+- **FFmpeg 9.0 breaks `gulp/node_modules/fluent-ffmpeg/lib/capabilities.js`'s output parser.** Its
+  `formatRegexp` hardcodes a single space between capability flags and the format name; ffmpeg 9.x's
+  `-formats` output uses two, so every mux/demux capability check silently reports "not available" even when
+  the codec is present — this breaks `sounds.sfxOptimize` with a misleading `Output format mp3 is not
+  available` error. FFmpeg ~6.x (what Ubuntu 24.04's `apt-get install ffmpeg` provides, i.e. what CI already
+  runs) does not trigger this. A real version-skew bug in a pinned npm dependency, not this plan's code —
+  worth knowing before re-diagnosing it from scratch on a machine with a newer local ffmpeg.
+- **The plan's documented Node-16 CI fallback (pin `playwright` to `1.40.1`) is unsafe and was not used.** It
+  does fix the Node-16 `yarn install` engines-check failure, but that old a Playwright version predates
+  Ubuntu 24.04 "noble"'s `libasound2` → `libasound2t64` apt package rename, so it then breaks `browser-test`'s
+  `--with-deps` Chromium install on `ubuntu-latest` (which runs noble) with `Package 'libasound2' has no
+  installation candidate`. No single Playwright version satisfies both Node 16 support and noble-aware
+  `--with-deps` — per npm registry `engines` metadata, the `engines.node` requirement jumps to `>=18`
+  starting at Playwright 1.45.0. **Fix actually used:** keep `playwright` at `^1.49.0` (unchanged), and scope
+  `yarn --ignore-engines` to only the `setup`/`CI` job's root `yarn` install step — the `cd gulp/ && yarn`
+  call is untouched and doesn't need it, since the gulp tree never references playwright. This is the current
+  state of `.github/workflows/ci.yml`. Caveat: that `--ignore-engines` is job-wide, not package-scoped, so it
+  would also silently permit a *different* future Node-16-incompatible root devDependency to install rather
+  than failing loudly — bounded risk since that job only lints/typechecks, but a known blind spot.
 
 ## Current state
 
-`origin/master`'s last **source** change is `01a766fe`; every commit since is docs only. CI run
-[31230953714](https://github.com/Skigim/Foundry/actions/runs/31230953714) is **fully green** — `test`,
-`yaml-lint`, and `CI` (lint + tslint) all passed. First clean run this repo has ever had, as far as the
-Actions API history goes back.
+`origin/master`'s last **source** change is `01a766fe`; every commit since is docs only. Live work is on
+`phase-1/stage-0-boot-smoke` (draft [PR #1](https://github.com/Skigim/Foundry/pull/1), now at `c3c61656`),
+which has landed Stage 0 artifact 4 end to end: the plan, the `browser-test` CI job, `test/browser/harness.js`,
+`test/browser/boot.smoke.test.js`, and the CI step that runs `yarn test:browser`. Its run
+[31664495889](https://github.com/Skigim/Foundry/actions/runs/31664495889) is **fully green across all four
+jobs** — `CI` 1m55s, `test` 12s, `browser-test` 2m24s, `yaml-lint` 31s — the first run where `browser-test`
+includes the actual Playwright boot test, not just the atlas/bundle build.
 
-**None of phase-1.md's four Stage 0 artifacts exist yet.** What does exist is a precursor to them, and it is
-confirmed cross-platform:
+**Stage 0 artifact 4 (boot smoke test) now exists and runs in CI; artifacts 1–3 do not yet.** Also in place,
+as a precursor toward artifact 1, and confirmed cross-platform:
 
 - `test/rng.determinism.test.js` — 7 tests, `node:test` + `node:assert`, zero new dependencies. Covers
   same-seed equality, different-seed inequality, numeric/string seed equivalence, `reseed`/`setSeed`, and
@@ -118,13 +174,23 @@ confirmed cross-platform:
   make CI pass — a change there means determinism broke, and that is the finding, not an obstacle.
 
 ```bash
-yarn test    # equivalent to: node --test "test/**/*.test.js"
+yarn test    # equivalent to: node --test "test/*.test.js"
 ```
 
 `yarn test` runs in CI on a dedicated `test` job (`.github/workflows/ci.yml`) pinned to Node 22.x — the
 version the seed-42 references were generated on — on `ubuntu-latest`. Passing there means the seed-42
 values are genuine cross-platform evidence, not just a same-machine check. The job skips `yarn install` —
 the test script has no dependencies of its own.
+
+`yarn test` (`node --test "test/*.test.js"`) and `yarn test:browser`
+(`node --test "test/browser/**/*.test.js"`) are now separate scripts, deliberately: `test/browser/**` needs a
+real dev build, Playwright, and a full `yarn install` first, and `yarn test` is meant to stay a few-second,
+dependency-free check. `test/browser/harness.js` is the shared module — `assertBuildPresent`,
+`startStaticServer`, `launchGame`, `waitForMainMenu` — that Task 5 will extend with the determinism helpers
+for artifact 1. `test/browser/boot.smoke.test.js` is artifact 4 itself: it asserts the dev bundle reaches
+`document.body.id === "state_MainMenuState"` with zero uncaught page errors. It runs in CI's `browser-test`
+job, after the dev bundle and atlas are built and Chromium is installed via `npx playwright install
+--with-deps chromium`.
 
 **The pre-existing `TSLint` failures are fixed** (`phase-1/stage-0-tslint-fix`, fast-forwarded into master
 at `01a766fe` — single commit, so no `--no-ff`). All 7 were type-only JSDoc/tsc issues, unrelated to the
@@ -138,15 +204,15 @@ did — previously this set `NaN%` as the boot progress bar's width. Everything 
 JSDoc types are stripped before the real bundle ships.
 
 Remaining, using phase-1.md's numbering: **(1) golden-save simulation hash, (2) draw-call recording,
-(3) perf benchmark, (4) boot smoke test** — all four. Artifacts 1 and 4 are now designed (below); 2 and 3
-are not yet specced.
+(3) perf benchmark** — artifact 4 (boot smoke test) is done. Artifact 1 is designed (below) and is Branch B's
+work (Tasks 5–7); 2 and 3 are not yet specced.
 
-**Stage 0's execution substrate is decided — designed, approved, not yet implemented.**
+**Stage 0's execution substrate is decided, and Branch A has implemented it.**
 [docs/superpowers/specs/2026-08-12-stage0-browser-harness-design.md](superpowers/specs/2026-08-12-stage0-browser-harness-design.md)
-is the authoritative spec; read it before writing any Stage 0 test code. In short: one substrate for the whole
+is the authoritative spec and is unchanged; read it before writing any Stage 0 test code. In short: one substrate for the whole
 stage — a Playwright harness driving a **real built dev bundle** — with the boot smoke test (artifact 4) built
-**first** and the golden-save hash (artifact 1) layered on top. Artifacts 2 and 3 are expected to reuse the
-same harness.
+**first**, now landed, and the golden-save hash (artifact 1) layered on top next, on Branch B. Artifacts 2 and
+3 are expected to reuse the same harness.
 
 Why, briefly. An earlier design tried to run the simulation under plain Node behind a few hand-rolled shims;
 independent review disproved its premise and it is kept, marked superseded, at
@@ -165,22 +231,78 @@ engine-boundary surgery before the guard that surgery needs exists.
 
 ## Next step
 
-Write the implementation plan for the design doc above, then execute it in two branches, each green on its
-own:
+**Branch A (Tasks 1–4) is done and merged to master.** All four tasks landed: the atlas gate proof (Task 1),
+the Playwright harness and boot smoke test (Task 2), wiring `yarn test:browser` into CI's `browser-test` job
+(Task 3), and this doc/roadmap update (Task 4). Stage 0 artifact 4 is complete and enforced in CI.
 
-1. **Boot smoke test (artifact 4) first.** Build in CI, launch a browser, assert the main menu renders with no
-   uncaught errors. Proves the whole pipeline — atlas, sounds, bundle, browser, CI.
-2. **Golden-save hash (artifact 1) second**, on a substrate already proven to work.
+**Next: Branch B — golden-save hash (Tasks 5–7).**
+[docs/superpowers/plans/2026-08-12-stage0-browser-harness.md](superpowers/plans/2026-08-12-stage0-browser-harness.md)
+has the exact steps, file contents, commands and expected outputs; read it before writing any code. Start
+with:
 
-**Before writing any test code, verify `imgres.buildAtlas` actually runs on `ubuntu-latest`.** It never has
-(see Empirical constraints), it fails silently when it fails, and it is the single biggest schedule risk in
-the plan.
+```bash
+git checkout master && git pull && git checkout -b phase-1/stage-0-golden-hash
+```
+
+- **Task 5** — determinism controls (`prepareDeterministicRun`, `loadFixtureGame`, `runTicks`,
+  `hashSimulationState`, added to `test/browser/harness.js`) and the committed fixture save.
+- **Task 6** — the golden-save hash test itself. Run it twice locally to prove self-consistency *before*
+  pinning a reference hash — do not reorder this (see the standing rule at the bottom of this doc).
+- **Task 7** — confirm CI green, record Branch B's findings in this same handoff, amend the roadmap Status
+  paragraph Task 4 just wrote, merge with `--no-ff`.
+
+The reference hash and fixture must come from one machine's actual measured run — never invented to make a
+test file look complete.
+
+### If you are running this with parallel agents
+
+The plan is written for sequential execution and **Tasks 2–7 genuinely do not parallelize**. Three hard
+serializations, each of which produces silent corruption rather than a clean failure if ignored:
+
+- **One `build/` directory, one atlas.** Every browser test runs against the same built dev bundle at the
+  repo root. Two agents building or testing at once interleave writes into `build/` and `res_built/`, and the
+  loser sees a half-written bundle — which, per the constraint above, manifests as an unexplained timeout at
+  "Downloading resources", not an error naming the cause.
+- **One branch, sequential commits.** Task 3 edits the CI job Task 1 created; Task 6 pins a hash produced by
+  Task 5's fixture; Task 7 amends the roadmap paragraph Task 4 wrote. Each task's starting state is the prior
+  task's commit.
+- **The reference values must come from one machine's measured run.** `GOLDEN_SAVE_HASH` and
+  `test/fixtures/golden_save.json` are captured, not authored. An agent that has not actually run
+  `dump_state.js` cannot supply them, and must never invent one to make a test file look complete.
+
+What *does* parallelize usefully is **verification, not construction**: independent review of the harness
+against the spec, adversarial checks on the determinism controls (the four hazards in
+`prepareDeterministicRun` are the highest-value thing to attack), and a fresh-eyes pass asking what the plan
+assumed but never measured. Fan out on those; keep the edits on one thread.
+
+Two failure modes worth pre-empting, because both end in a green test that proves nothing:
+
+- **A hash test over a nondeterministic run.** Plan Task 6 Step 2 exists precisely to prove self-consistency
+  *before* any reference is pinned. Do not reorder it.
+- **A test that passes because the simulation never ticked.** `game_time.js:87` zeroes the logic budget when
+  `root.hud.shouldPauseGame()` is true, so `performTicks` can silently run zero ticks. The
+  `ticksRun === TICK_COUNT` assertion is the guard; it is not optional.
+
+And the standing rule that most needs saying to an agent under time pressure: **a committed reference value
+is never regenerated to make CI green.** If the hash moves, that is the finding. `dump_state.js` exists to
+say *what* moved.
 
 ## Open questions
 
-- Exact tick count and fixture composition for the hash run — deliberately deferred to implementation.
-- Which Playwright browser to pin, and whether to cache both it and the 22MB texture-packer jar in CI.
-- Whether the smoke test's "reached main menu" assertion can be made stable against the preloader's timing
-  rather than racing it.
+- **Should `browser-test` skip docs-only pushes?** It has no path filter, so every push to a PR branch runs
+  the full atlas + webpack build — measured at 2m46s and 2m55s on this branch for two commits that touched
+  nothing but `docs/**`. Harmless for one-off doc commits; it compounds badly for a session making many small
+  commits, which is exactly the shape of the work left. The fix is a `paths-ignore` on the job, and the
+  reason it is a question rather than a change is that the safe filter is narrower than it looks: `docs/**`
+  alone is fine, but anything broader risks skipping the build on a push that genuinely needs it, and a
+  required-check configuration will treat a skipped job differently from a passing one. Decide deliberately;
+  do not bundle it into a task.
+- Whether to bump the deprecated action versions (see Empirical constraints) as a standalone change.
 - Local branches `phase-1/stage-0-harness` and `phase-1/stage-0-ci` are merged but not deleted; add
   `phase-1/stage-0-tslint-fix` to that list.
+
+Settled since the last session, and recorded here so they are not reopened: tick count (600 at a pinned
+60 UPS), fixture composition (a miner plus 20 belts, deliberately short of back-pressure), Playwright browser
+(Chromium, cached alongside the texture-packer jar), and the main-menu assertion
+(`document.body.id === "state_MainMenuState"`, set by `state_manager.js:88` — a state-machine fact rather than
+a rendering-timing guess). All four are argued in the plan.
