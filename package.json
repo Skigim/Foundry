@@ -10,7 +10,7 @@
         "dev": "cd gulp && yarn gulp",
         "devStandalone": "cd gulp && yarn gulp serve.standalone-steam",
         "tslint": "cd src/js && tsc",
-        "lint": "eslint src/js",
+        "lint": "eslint src/js test",
         "test": "node --test \"test/*.test.js\"",
         "test:browser": "node --test \"test/browser/**/*.test.js\"",
         "prettier-all": "prettier --write src/**/*.* && prettier --write gulp/**/*.*",
