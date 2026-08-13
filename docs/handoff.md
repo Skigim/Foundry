@@ -81,9 +81,33 @@ Learned by running code, not by assuming. Each one has already cost time once.
   Local Node here is 22.
 - **`imgres.buildAtlas` fails silently.** `gulp/image-resources.js:75-113` wraps the task in
   `try { ... } catch { console.warn(...) }` and then calls `cb()` — a *successful* callback. Missing Java or a
-  failed 22MB jar download yields a "successful" build with no sprites. It has also **never run in this
-  repo's CI** (the `CI` job only runs `translations.fullBuild` + `localConfig.findOrCreate`), so atlas-on-ubuntu
-  is unproven.
+  failed 22MB jar download yields a "successful" build with no sprites. Still true, and still worth guarding
+  against; but see the next bullet — it is no longer unproven on ubuntu.
+- **The atlas does build on `ubuntu-latest`.** Measured 2026-08-12 in run
+  [31660769430](https://github.com/Skigim/Foundry/actions/runs/31660769430), the first time `imgres.buildAtlas`
+  has ever executed in this repo's CI. Produced three real variants (`atlas0_hq/mq/lq` × `.atlas`/`.json`/`.png`,
+  1.9MB/951KB/389KB), and `Building atlas failed` appears zero times in the log, so the silent-failure path was
+  not taken. Specifics worth not re-deriving: the runner ships **OpenJDK 17.0.19** preinstalled, so no
+  `setup-java` step is needed; the jar downloads via the first fallback (`wget`); and `actions/cache` on
+  `gulp/runnable-texturepacker.jar` works, so only the first run pays the 22MB download. **Whole job: 2m20s
+  cold**, against the 5–10 min the design budgeted — and that is with the download, before any Playwright step.
+- **A silently-empty atlas does not surface as a build error later either.** `states/preload.js:211` returns a
+  promise that *never resolves* when resource loading fails, so the game hangs at "Downloading resources"
+  rather than throwing. Any browser test must assert the atlas is non-empty before launching, or its failure
+  mode is an unexplained timeout.
+- **`utils.cleanImageBuildFolder` cleans the wrong directory.** It targets `gulp/res_built`
+  (`gulpfile.js:88`, via `__dirname`), but the atlas is written to the repo-root `res_built`
+  (`image-resources.js:78`, via a cwd-relative `../res_built/atlas`). So the atlas is never actually cleaned
+  and a stale local one can mask a broken build. CI is unaffected — fresh checkout every run.
+- **`gh` resolves to `tobspr-games/shapez.io`, not this fork.** Both `origin` (Skigim/Foundry) and `upstream`
+  (tobspr-games/shapez.io) are configured and no default is set, so bare `gh` commands target *upstream*. A
+  `gh pr create` here tried to open a PR against tobspr's repo and was rejected only because there were no
+  commits between the two. Pass `--repo Skigim/Foundry` explicitly, or run `gh repo set-default Skigim/Foundry`
+  once.
+- **CI's pinned actions are living on borrowed time.** Every job now annotates: `actions/checkout@v2`,
+  `actions/setup-node@v2-beta` and `actions/cache@v4` target Node 20, which is deprecated and is being *forced*
+  onto Node 24 by the runner. Nothing is broken yet. Bumping them is its own small change, deliberately not
+  bundled into Stage 0 work.
 - **`window.shapez` does not exist in web prod builds.** `exposeExports()` is gated on
   `G_IS_DEV || G_IS_STANDALONE` (`modloader.js:111`) and `gulp/webpack.production.config.js:27` hardcodes
   `G_IS_DEV: "false"`. Anything driving the game from outside must target a dev bundle.
@@ -103,10 +127,11 @@ Learned by running code, not by assuming. Each one has already cost time once.
 
 ## Current state
 
-`origin/master`'s last **source** change is `01a766fe`; every commit since is docs only. CI run
-[31230953714](https://github.com/Skigim/Foundry/actions/runs/31230953714) is **fully green** — `test`,
-`yaml-lint`, and `CI` (lint + tslint) all passed. First clean run this repo has ever had, as far as the
-Actions API history goes back.
+`origin/master`'s last **source** change is `01a766fe`; every commit since is docs only. Live work is on
+`phase-1/stage-0-boot-smoke` (draft [PR #1](https://github.com/Skigim/Foundry/pull/1)), which adds the plan
+and a `browser-test` CI job — no source changes there either yet. Its run
+[31660769430](https://github.com/Skigim/Foundry/actions/runs/31660769430) is **fully green across all four
+jobs**: `browser-test` (2m20s), `test`, `yaml-lint`, and `CI`.
 
 **None of phase-1.md's four Stage 0 artifacts exist yet.** What does exist is a precursor to them, and it is
 confirmed cross-platform:
@@ -141,9 +166,10 @@ Remaining, using phase-1.md's numbering: **(1) golden-save simulation hash, (2) 
 (3) perf benchmark, (4) boot smoke test** — all four. Artifacts 1 and 4 are now designed (below); 2 and 3
 are not yet specced.
 
-**Stage 0's execution substrate is decided — designed, approved, not yet implemented.**
+**Stage 0's execution substrate is decided, planned, and being implemented now** — see Next step for exactly
+where.
 [docs/superpowers/specs/2026-08-12-stage0-browser-harness-design.md](superpowers/specs/2026-08-12-stage0-browser-harness-design.md)
-is the authoritative spec; read it before writing any Stage 0 test code. In short: one substrate for the whole
+is the authoritative spec and is unchanged; read it before writing any Stage 0 test code. In short: one substrate for the whole
 stage — a Playwright harness driving a **real built dev bundle** — with the boot smoke test (artifact 4) built
 **first** and the golden-save hash (artifact 1) layered on top. Artifacts 2 and 3 are expected to reuse the
 same harness.
@@ -165,22 +191,33 @@ engine-boundary surgery before the guard that surgery needs exists.
 
 ## Next step
 
-Write the implementation plan for the design doc above, then execute it in two branches, each green on its
-own:
+**The plan is written and its first task has landed.**
+[docs/superpowers/plans/2026-08-12-stage0-browser-harness.md](superpowers/plans/2026-08-12-stage0-browser-harness.md)
+breaks the design into seven tasks across two branches. Read it before writing any Stage 0 test code; it
+carries exact file contents, commands and expected outputs.
 
-1. **Boot smoke test (artifact 4) first.** Build in CI, launch a browser, assert the main menu renders with no
-   uncaught errors. Proves the whole pipeline — atlas, sounds, bundle, browser, CI.
-2. **Golden-save hash (artifact 1) second**, on a substrate already proven to work.
+Work continues on branch `phase-1/stage-0-boot-smoke` (draft
+[PR #1](https://github.com/Skigim/Foundry/pull/1)), which already holds the plan and the `browser-test` CI job:
 
-**Before writing any test code, verify `imgres.buildAtlas` actually runs on `ubuntu-latest`.** It never has
-(see Empirical constraints), it fails silently when it fails, and it is the single biggest schedule risk in
-the plan.
+- **Task 1 — done.** The atlas gate is cleared; see Empirical constraints. This was the plan's single biggest
+  schedule risk and it did not bite.
+- **Tasks 2–4 — next.** Add Playwright + `test/browser/harness.js` + the boot smoke test, verify locally,
+  wire `yarn test:browser` into the existing `browser-test` job, update docs. Then merge with `--no-ff`.
+- **Tasks 5–7 — after that**, on a fresh branch `phase-1/stage-0-golden-hash`.
+
+The one live risk left in Branch A: the `playwright` devDependency lands in the root tree that the **Node 16**
+`CI` job installs, and its postinstall downloads browsers. The plan handles this with a workflow-level
+`PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1` and an explicit Chromium install in `browser-test`, with a fallback of
+pinning `playwright@1.40.1`. Watch the `CI` job, not just `browser-test`, on that push.
 
 ## Open questions
 
-- Exact tick count and fixture composition for the hash run — deliberately deferred to implementation.
-- Which Playwright browser to pin, and whether to cache both it and the 22MB texture-packer jar in CI.
-- Whether the smoke test's "reached main menu" assertion can be made stable against the preloader's timing
-  rather than racing it.
+- Whether to bump the deprecated action versions (see Empirical constraints) as a standalone change.
 - Local branches `phase-1/stage-0-harness` and `phase-1/stage-0-ci` are merged but not deleted; add
   `phase-1/stage-0-tslint-fix` to that list.
+
+Settled since the last session, and recorded here so they are not reopened: tick count (600 at a pinned
+60 UPS), fixture composition (a miner plus 20 belts, deliberately short of back-pressure), Playwright browser
+(Chromium, cached alongside the texture-packer jar), and the main-menu assertion
+(`document.body.id === "state_MainMenuState"`, set by `state_manager.js:88` — a state-machine fact rather than
+a rendering-timing guess). All four are argued in the plan.
