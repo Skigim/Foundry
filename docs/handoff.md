@@ -156,13 +156,13 @@ Learned by running code, not by assuming. Each one has already cost time once.
 
 ## Current state
 
-`origin/master`'s last **source** change is `01a766fe`; every commit since is docs only. Live work is on
-`phase-1/stage-0-boot-smoke` (draft [PR #1](https://github.com/Skigim/Foundry/pull/1), now at `c3c61656`),
-which has landed Stage 0 artifact 4 end to end: the plan, the `browser-test` CI job, `test/browser/harness.js`,
-`test/browser/boot.smoke.test.js`, and the CI step that runs `yarn test:browser`. Its run
-[31664495889](https://github.com/Skigim/Foundry/actions/runs/31664495889) is **fully green across all four
-jobs** — `CI` 1m55s, `test` 12s, `browser-test` 2m24s, `yaml-lint` 31s — the first run where `browser-test`
-includes the actual Playwright boot test, not just the atlas/bundle build.
+`origin/master`'s last change is the `d9d5ff25` merge of `phase-1/stage-0-boot-smoke`
+([PR #1](https://github.com/Skigim/Foundry/pull/1), now **merged**, not draft), which landed Stage 0
+artifact 4 end to end: the `browser-test` CI job, `test/browser/harness.js`,
+`test/browser/boot.smoke.test.js`, `package.json`'s `yarn test`/`yarn test:browser` split, and the CI step
+that runs `yarn test:browser`. This is a real source/tooling change, not docs-only. The branch's last CI run
+before merge, [31702432310](https://github.com/Skigim/Foundry/actions/runs/31702432310), was **fully green
+across all four jobs**: `CI` 1m44s, `test` 16s, `browser-test` 2m47s, `yaml-lint` 28s.
 
 **Stage 0 artifact 4 (boot smoke test) now exists and runs in CI; artifacts 1–3 do not yet.** Also in place,
 as a precursor toward artifact 1, and confirmed cross-platform:
@@ -299,7 +299,7 @@ say *what* moved.
   do not bundle it into a task.
 - Whether to bump the deprecated action versions (see Empirical constraints) as a standalone change.
 - Local branches `phase-1/stage-0-harness` and `phase-1/stage-0-ci` are merged but not deleted; add
-  `phase-1/stage-0-tslint-fix` to that list.
+  `phase-1/stage-0-tslint-fix` and `phase-1/stage-0-boot-smoke` to that list.
 
 Settled since the last session, and recorded here so they are not reopened: tick count (600 at a pinned
 60 UPS), fixture composition (a miner plus 20 belts, deliberately short of back-pressure), Playwright browser
