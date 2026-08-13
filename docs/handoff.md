@@ -11,7 +11,7 @@ Living context for picking up work on Foundry in a fresh session. To use it, poi
 | Empirical constraints | Something is learned by running code. Append-only; never delete a constraint without proving it no longer holds. |
 | Current state / Next step / Open questions | Every session. |
 
-Last updated: 2026-08-12
+Last updated: 2026-08-13
 
 ---
 
@@ -126,17 +126,46 @@ Learned by running code, not by assuming. Each one has already cost time once.
 - **`require.context` (webpack-only) is called at registration time** in `component_registry.js:56` and
   `modloader.js:114`, so the component registry cannot load outside a webpack-compatible bundler. This
   blocks the golden-save hash artifact and is a point in Rspack's favor for Stage 1.
+- **`browser-test`'s full duration, including the actual Playwright boot test, is 2m24s.** Measured in CI run
+  [31664495889](https://github.com/Skigim/Foundry/actions/runs/31664495889) — the first run where the job
+  runs `yarn test:browser` rather than stopping after the atlas/bundle build. All four jobs green in that
+  run: `CI` 1m55s, `test` 12s, `browser-test` 2m24s, `yaml-lint` 31s — comfortably under the design's 5–10
+  minute budget.
+- **Local `gulp build.prepare.dev` needs a system `ffmpeg` on PATH.** The `sounds.dev` gulp task shells out to
+  it via `fluent-ffmpeg`; this Windows dev machine had none installed. CI is unaffected — both `browser-test`
+  and the `CI`/`setup` job already `apt-get install ffmpeg` explicitly.
+- **FFmpeg 9.0 breaks `gulp/node_modules/fluent-ffmpeg/lib/capabilities.js`'s output parser.** Its
+  `formatRegexp` hardcodes a single space between capability flags and the format name; ffmpeg 9.x's
+  `-formats` output uses two, so every mux/demux capability check silently reports "not available" even when
+  the codec is present — this breaks `sounds.sfxOptimize` with a misleading `Output format mp3 is not
+  available` error. FFmpeg ~6.x (what Ubuntu 24.04's `apt-get install ffmpeg` provides, i.e. what CI already
+  runs) does not trigger this. A real version-skew bug in a pinned npm dependency, not this plan's code —
+  worth knowing before re-diagnosing it from scratch on a machine with a newer local ffmpeg.
+- **The plan's documented Node-16 CI fallback (pin `playwright` to `1.40.1`) is unsafe and was not used.** It
+  does fix the Node-16 `yarn install` engines-check failure, but that old a Playwright version predates
+  Ubuntu 24.04 "noble"'s `libasound2` → `libasound2t64` apt package rename, so it then breaks `browser-test`'s
+  `--with-deps` Chromium install on `ubuntu-latest` (which runs noble) with `Package 'libasound2' has no
+  installation candidate`. No single Playwright version satisfies both Node 16 support and noble-aware
+  `--with-deps` — per npm registry `engines` metadata, the `engines.node` requirement jumps to `>=18`
+  starting at Playwright 1.45.0. **Fix actually used:** keep `playwright` at `^1.49.0` (unchanged), and scope
+  `yarn --ignore-engines` to only the `setup`/`CI` job's root `yarn` install step — the `cd gulp/ && yarn`
+  call is untouched and doesn't need it, since the gulp tree never references playwright. This is the current
+  state of `.github/workflows/ci.yml`. Caveat: that `--ignore-engines` is job-wide, not package-scoped, so it
+  would also silently permit a *different* future Node-16-incompatible root devDependency to install rather
+  than failing loudly — bounded risk since that job only lints/typechecks, but a known blind spot.
 
 ## Current state
 
 `origin/master`'s last **source** change is `01a766fe`; every commit since is docs only. Live work is on
-`phase-1/stage-0-boot-smoke` (draft [PR #1](https://github.com/Skigim/Foundry/pull/1)), which adds the plan
-and a `browser-test` CI job — no source changes there either yet. Its run
-[31660769430](https://github.com/Skigim/Foundry/actions/runs/31660769430) is **fully green across all four
-jobs**: `browser-test` (2m20s), `test`, `yaml-lint`, and `CI`.
+`phase-1/stage-0-boot-smoke` (draft [PR #1](https://github.com/Skigim/Foundry/pull/1), now at `c3c61656`),
+which has landed Stage 0 artifact 4 end to end: the plan, the `browser-test` CI job, `test/browser/harness.js`,
+`test/browser/boot.smoke.test.js`, and the CI step that runs `yarn test:browser`. Its run
+[31664495889](https://github.com/Skigim/Foundry/actions/runs/31664495889) is **fully green across all four
+jobs** — `CI` 1m55s, `test` 12s, `browser-test` 2m24s, `yaml-lint` 31s — the first run where `browser-test`
+includes the actual Playwright boot test, not just the atlas/bundle build.
 
-**None of phase-1.md's four Stage 0 artifacts exist yet.** What does exist is a precursor to them, and it is
-confirmed cross-platform:
+**Stage 0 artifact 4 (boot smoke test) now exists and runs in CI; artifacts 1–3 do not yet.** Also in place,
+as a precursor toward artifact 1, and confirmed cross-platform:
 
 - `test/rng.determinism.test.js` — 7 tests, `node:test` + `node:assert`, zero new dependencies. Covers
   same-seed equality, different-seed inequality, numeric/string seed equivalence, `reseed`/`setSeed`, and
@@ -145,13 +174,23 @@ confirmed cross-platform:
   make CI pass — a change there means determinism broke, and that is the finding, not an obstacle.
 
 ```bash
-yarn test    # equivalent to: node --test "test/**/*.test.js"
+yarn test    # equivalent to: node --test "test/*.test.js"
 ```
 
 `yarn test` runs in CI on a dedicated `test` job (`.github/workflows/ci.yml`) pinned to Node 22.x — the
 version the seed-42 references were generated on — on `ubuntu-latest`. Passing there means the seed-42
 values are genuine cross-platform evidence, not just a same-machine check. The job skips `yarn install` —
 the test script has no dependencies of its own.
+
+`yarn test` (`node --test "test/*.test.js"`) and `yarn test:browser`
+(`node --test "test/browser/**/*.test.js"`) are now separate scripts, deliberately: `test/browser/**` needs a
+real dev build, Playwright, and a full `yarn install` first, and `yarn test` is meant to stay a few-second,
+dependency-free check. `test/browser/harness.js` is the shared module — `assertBuildPresent`,
+`startStaticServer`, `launchGame`, `waitForMainMenu` — that Task 5 will extend with the determinism helpers
+for artifact 1. `test/browser/boot.smoke.test.js` is artifact 4 itself: it asserts the dev bundle reaches
+`document.body.id === "state_MainMenuState"` with zero uncaught page errors. It runs in CI's `browser-test`
+job, after the dev bundle and atlas are built and Chromium is installed via `npx playwright install
+--with-deps chromium`.
 
 **The pre-existing `TSLint` failures are fixed** (`phase-1/stage-0-tslint-fix`, fast-forwarded into master
 at `01a766fe` — single commit, so no `--no-ff`). All 7 were type-only JSDoc/tsc issues, unrelated to the
@@ -165,16 +204,15 @@ did — previously this set `NaN%` as the boot progress bar's width. Everything 
 JSDoc types are stripped before the real bundle ships.
 
 Remaining, using phase-1.md's numbering: **(1) golden-save simulation hash, (2) draw-call recording,
-(3) perf benchmark, (4) boot smoke test** — all four. Artifacts 1 and 4 are now designed (below); 2 and 3
-are not yet specced.
+(3) perf benchmark** — artifact 4 (boot smoke test) is done. Artifact 1 is designed (below) and is Branch B's
+work (Tasks 5–7); 2 and 3 are not yet specced.
 
-**Stage 0's execution substrate is decided, planned, and being implemented now** — see Next step for exactly
-where.
+**Stage 0's execution substrate is decided, and Branch A has implemented it.**
 [docs/superpowers/specs/2026-08-12-stage0-browser-harness-design.md](superpowers/specs/2026-08-12-stage0-browser-harness-design.md)
 is the authoritative spec and is unchanged; read it before writing any Stage 0 test code. In short: one substrate for the whole
 stage — a Playwright harness driving a **real built dev bundle** — with the boot smoke test (artifact 4) built
-**first** and the golden-save hash (artifact 1) layered on top. Artifacts 2 and 3 are expected to reuse the
-same harness.
+**first**, now landed, and the golden-save hash (artifact 1) layered on top next, on Branch B. Artifacts 2 and
+3 are expected to reuse the same harness.
 
 Why, briefly. An earlier design tried to run the simulation under plain Node behind a few hand-rolled shims;
 independent review disproved its premise and it is kept, marked superseded, at
@@ -193,24 +231,28 @@ engine-boundary surgery before the guard that surgery needs exists.
 
 ## Next step
 
-**The plan is written and its first task has landed.**
+**Branch A (Tasks 1–4) is done and merged to master.** All four tasks landed: the atlas gate proof (Task 1),
+the Playwright harness and boot smoke test (Task 2), wiring `yarn test:browser` into CI's `browser-test` job
+(Task 3), and this doc/roadmap update (Task 4). Stage 0 artifact 4 is complete and enforced in CI.
+
+**Next: Branch B — golden-save hash (Tasks 5–7).**
 [docs/superpowers/plans/2026-08-12-stage0-browser-harness.md](superpowers/plans/2026-08-12-stage0-browser-harness.md)
-breaks the design into seven tasks across two branches. Read it before writing any Stage 0 test code; it
-carries exact file contents, commands and expected outputs.
+has the exact steps, file contents, commands and expected outputs; read it before writing any code. Start
+with:
 
-Work continues on branch `phase-1/stage-0-boot-smoke` (draft
-[PR #1](https://github.com/Skigim/Foundry/pull/1)), which already holds the plan and the `browser-test` CI job:
+```bash
+git checkout master && git pull && git checkout -b phase-1/stage-0-golden-hash
+```
 
-- **Task 1 — done.** The atlas gate is cleared; see Empirical constraints. This was the plan's single biggest
-  schedule risk and it did not bite.
-- **Tasks 2–4 — next.** Add Playwright + `test/browser/harness.js` + the boot smoke test, verify locally,
-  wire `yarn test:browser` into the existing `browser-test` job, update docs. Then merge with `--no-ff`.
-- **Tasks 5–7 — after that**, on a fresh branch `phase-1/stage-0-golden-hash`.
+- **Task 5** — determinism controls (`prepareDeterministicRun`, `loadFixtureGame`, `runTicks`,
+  `hashSimulationState`, added to `test/browser/harness.js`) and the committed fixture save.
+- **Task 6** — the golden-save hash test itself. Run it twice locally to prove self-consistency *before*
+  pinning a reference hash — do not reorder this (see the standing rule at the bottom of this doc).
+- **Task 7** — confirm CI green, record Branch B's findings in this same handoff, amend the roadmap Status
+  paragraph Task 4 just wrote, merge with `--no-ff`.
 
-The one live risk left in Branch A: the `playwright` devDependency lands in the root tree that the **Node 16**
-`CI` job installs, and its postinstall downloads browsers. The plan handles this with a workflow-level
-`PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1` and an explicit Chromium install in `browser-test`, with a fallback of
-pinning `playwright@1.40.1`. Watch the `CI` job, not just `browser-test`, on that push.
+The reference hash and fixture must come from one machine's actual measured run — never invented to make a
+test file look complete.
 
 ### If you are running this with parallel agents
 
