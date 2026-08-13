@@ -247,6 +247,14 @@ say *what* moved.
 
 ## Open questions
 
+- **Should `browser-test` skip docs-only pushes?** It has no path filter, so every push to a PR branch runs
+  the full atlas + webpack build — measured at 2m46s and 2m55s on this branch for two commits that touched
+  nothing but `docs/**`. Harmless for one-off doc commits; it compounds badly for a session making many small
+  commits, which is exactly the shape of the work left. The fix is a `paths-ignore` on the job, and the
+  reason it is a question rather than a change is that the safe filter is narrower than it looks: `docs/**`
+  alone is fine, but anything broader risks skipping the build on a push that genuinely needs it, and a
+  required-check configuration will treat a skipped job differently from a passing one. Decide deliberately;
+  do not bundle it into a task.
 - Whether to bump the deprecated action versions (see Empirical constraints) as a standalone change.
 - Local branches `phase-1/stage-0-harness` and `phase-1/stage-0-ci` are merged but not deleted; add
   `phase-1/stage-0-tslint-fix` to that list.
