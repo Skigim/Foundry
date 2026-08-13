@@ -99,11 +99,13 @@ Learned by running code, not by assuming. Each one has already cost time once.
   (`gulpfile.js:88`, via `__dirname`), but the atlas is written to the repo-root `res_built`
   (`image-resources.js:78`, via a cwd-relative `../res_built/atlas`). So the atlas is never actually cleaned
   and a stale local one can mask a broken build. CI is unaffected — fresh checkout every run.
-- **`gh` resolves to `tobspr-games/shapez.io`, not this fork.** Both `origin` (Skigim/Foundry) and `upstream`
-  (tobspr-games/shapez.io) are configured and no default is set, so bare `gh` commands target *upstream*. A
-  `gh pr create` here tried to open a PR against tobspr's repo and was rejected only because there were no
-  commits between the two. Pass `--repo Skigim/Foundry` explicitly, or run `gh repo set-default Skigim/Foundry`
-  once.
+- **`gh` defaults to `tobspr-games/shapez.io` until told otherwise.** Both `origin` (Skigim/Foundry) and
+  `upstream` (tobspr-games/shapez.io) are configured, and with no default set, bare `gh` commands target
+  *upstream* — a `gh pr create` here aimed a PR at tobspr's repo and was rejected only because there were no
+  commits between the two. Fixed on this clone with `gh repo set-default Skigim/Foundry` (2026-08-12), which
+  writes `remote.origin.gh-resolved` to `.git/config`. **That is per-clone and not committed**, so a fresh
+  clone, another machine, or a git worktree with its own config will hit it again. Run it once after cloning,
+  or pass `--repo Skigim/Foundry` explicitly.
 - **CI's pinned actions are living on borrowed time.** Every job now annotates: `actions/checkout@v2`,
   `actions/setup-node@v2-beta` and `actions/cache@v4` target Node 20, which is deprecated and is being *forced*
   onto Node 24 by the runner. Nothing is broken yet. Bumping them is its own small change, deliberately not
@@ -209,6 +211,39 @@ The one live risk left in Branch A: the `playwright` devDependency lands in the 
 `CI` job installs, and its postinstall downloads browsers. The plan handles this with a workflow-level
 `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1` and an explicit Chromium install in `browser-test`, with a fallback of
 pinning `playwright@1.40.1`. Watch the `CI` job, not just `browser-test`, on that push.
+
+### If you are running this with parallel agents
+
+The plan is written for sequential execution and **Tasks 2–7 genuinely do not parallelize**. Three hard
+serializations, each of which produces silent corruption rather than a clean failure if ignored:
+
+- **One `build/` directory, one atlas.** Every browser test runs against the same built dev bundle at the
+  repo root. Two agents building or testing at once interleave writes into `build/` and `res_built/`, and the
+  loser sees a half-written bundle — which, per the constraint above, manifests as an unexplained timeout at
+  "Downloading resources", not an error naming the cause.
+- **One branch, sequential commits.** Task 3 edits the CI job Task 1 created; Task 6 pins a hash produced by
+  Task 5's fixture; Task 7 amends the roadmap paragraph Task 4 wrote. Each task's starting state is the prior
+  task's commit.
+- **The reference values must come from one machine's measured run.** `GOLDEN_SAVE_HASH` and
+  `test/fixtures/golden_save.json` are captured, not authored. An agent that has not actually run
+  `dump_state.js` cannot supply them, and must never invent one to make a test file look complete.
+
+What *does* parallelize usefully is **verification, not construction**: independent review of the harness
+against the spec, adversarial checks on the determinism controls (the four hazards in
+`prepareDeterministicRun` are the highest-value thing to attack), and a fresh-eyes pass asking what the plan
+assumed but never measured. Fan out on those; keep the edits on one thread.
+
+Two failure modes worth pre-empting, because both end in a green test that proves nothing:
+
+- **A hash test over a nondeterministic run.** Plan Task 6 Step 2 exists precisely to prove self-consistency
+  *before* any reference is pinned. Do not reorder it.
+- **A test that passes because the simulation never ticked.** `game_time.js:87` zeroes the logic budget when
+  `root.hud.shouldPauseGame()` is true, so `performTicks` can silently run zero ticks. The
+  `ticksRun === TICK_COUNT` assertion is the guard; it is not optional.
+
+And the standing rule that most needs saying to an agent under time pressure: **a committed reference value
+is never regenerated to make CI green.** If the hash moves, that is the finding. `dump_state.js` exists to
+say *what* moved.
 
 ## Open questions
 
