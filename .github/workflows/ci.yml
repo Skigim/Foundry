@@ -9,6 +9,12 @@ on:
         branches:
             - master
 
+# The playwright package downloads browsers on install. Only browser-test needs
+# them, and the `setup` job runs yarn on Node 16, which playwright does not
+# support. browser-test installs Chromium explicitly instead.
+env:
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+
 jobs:
     setup:
         name: CI
