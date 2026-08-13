@@ -103,12 +103,13 @@ Learned by running code, not by assuming. Each one has already cost time once.
 
 ## Current state
 
-`origin/master` at `0a8add4f`. CI run
+`origin/master`'s last **source** change is `01a766fe`; every commit since is docs only. CI run
 [31230953714](https://github.com/Skigim/Foundry/actions/runs/31230953714) is **fully green** — `test`,
 `yaml-lint`, and `CI` (lint + tslint) all passed. First clean run this repo has ever had, as far as the
 Actions API history goes back.
 
-Stage 0, artifact 1 of 4 complete, **and confirmed cross-platform**:
+**None of phase-1.md's four Stage 0 artifacts exist yet.** What does exist is a precursor to them, and it is
+confirmed cross-platform:
 
 - `test/rng.determinism.test.js` — 7 tests, `node:test` + `node:assert`, zero new dependencies. Covers
   same-seed equality, different-seed inequality, numeric/string seed equivalence, `reseed`/`setSeed`, and
@@ -136,50 +137,31 @@ CI-wiring work: `mod_interface.js`'s `afterPrams`/`extendsPrams` typedefs used a
 did — previously this set `NaN%` as the boot progress bar's width. Everything else is compile-time only;
 JSDoc types are stripped before the real bundle ships.
 
-Remaining Stage 0 artifacts: golden-save simulation hash, draw-call recording, boot smoke test.
+Remaining, using phase-1.md's numbering: **(1) golden-save simulation hash, (2) draw-call recording,
+(3) perf benchmark, (4) boot smoke test** — all four. Artifacts 1 and 4 are now designed (below); 2 and 3
+are not yet specced.
 
-**Golden-save hash: a design was drafted, approved, then invalidated by independent review — nothing
-implemented.** Full history for a fresh session:
+**Stage 0's execution substrate is decided — designed, approved, not yet implemented.**
+[docs/superpowers/specs/2026-08-12-stage0-browser-harness-design.md](superpowers/specs/2026-08-12-stage0-browser-harness-design.md)
+is the authoritative spec; read it before writing any Stage 0 test code. In short: one substrate for the whole
+stage — a Playwright harness driving a **real built dev bundle** — with the boot smoke test (artifact 4) built
+**first** and the golden-save hash (artifact 1) layered on top. Artifacts 2 and 3 are expected to reuse the
+same harness.
 
-1. Brainstormed a design (`docs/superpowers/specs/2026-08-12-stage0-golden-save-hash-design.md`) built on
-   this premise: call the real `GameCore.initializeRoot()` unmodified, and get past its browser-only calls
-   by handing it three hand-rolled fakes (a fake `document`/canvas, a fake `InGameState`-like `parentState`,
-   a thin fake `Application`), plus one small guard in `component_registry.js` so its `require.context`
-   sanity-check doesn't throw in Node.
-2. That design was approved in-session, then sent to an independent Opus subagent for review before moving
-   to an implementation plan — specifically instructed to verify every claim against the actual source
-   rather than trust the spec's prose.
-3. **The review found the premise doesn't hold, and this was confirmed empirically** (see the new Empirical
-   constraints bullets above). Three shims are nowhere near enough — `src/js` cannot be imported under plain
-   Node at all, independent of browser globals, because of webpack-only module resolution and build-time
-   code stripping. The review also caught two correctness bugs the original design missed: the fake
-   `Application`'s empty settings stub causes a silent `NaN` tick rate rather than failing loudly as
-   intended, and the specified hash subset includes a wall-clock-derived value that makes the hash
-   nondeterministic by construction.
-4. **The spec doc is now marked superseded** (status header updated) rather than deleted, since the parts of
-   it that *did* hold up are worth keeping: reusing the real construction path instead of hand-writing a
-   parallel one (to avoid test/reality drift) is still the right instinct, just not achievable with shims
-   alone.
+Why, briefly. An earlier design tried to run the simulation under plain Node behind a few hand-rolled shims;
+independent review disproved its premise and it is kept, marked superseded, at
+[2026-08-12-stage0-golden-save-hash-design.md](superpowers/specs/2026-08-12-stage0-golden-save-hash-design.md).
+The fallback — bundling a small dedicated test entry point — was then chosen for being cheap, and a probe build
+showed it isn't: bundling the simulation is bundling the whole game (see the `require.context` constraint
+above), so it needs the full asset pipeline regardless. Once a real build is required either way, a real
+browser costs a Playwright dependency and little else, and it removes the test/reality-drift question that
+sank the first design. Deferring the whole thing until after Stage 1 was rejected for running the roadmap's
+riskiest change with no guard at all.
 
-**Why the "shim it and use raw `src/js`" approach specifically was dismissed:** getting there isn't three
-fakes — it's a module resolver that appends extensions, a `require()` shim for CJS/JSON imports, a
-typehints-stripping transform, and a browser-like DOM environment faithful enough for ~25 HUD parts to
-attach into. At that point the test harness *is* a small webpack, and every one of those pieces becomes a
-place the Node harness can silently diverge from what the browser actually does — the exact risk the
-"reuse the real code path" argument existed to avoid. The cost was underestimated by roughly an order of
-magnitude in the original spec.
-
-**Decision made 2026-08-12: strategy (3), widened.** Stage 0 gets **one** execution substrate — a Playwright
-harness driving a real built dev bundle — and the boot smoke test (artifact 4) is built **first**, with the
-golden-save hash (artifact 1) layered on top of it. Design:
-[docs/superpowers/specs/2026-08-12-stage0-browser-harness-design.md](superpowers/specs/2026-08-12-stage0-browser-harness-design.md).
-
-What decided it: strategy (1) was chosen for being cheap, and the probe build showed it isn't — bundling the
-simulation is bundling the whole game (see the `require.context` constraint above), so it needs the full asset
-pipeline either way. Once a real build is required regardless, a real browser costs a Playwright dependency
-and little else, and removes the test/reality-drift question outright. Strategy (2) was rejected for running
-the roadmap's riskiest change with zero guard. Reordering artifacts *within* Stage 0 costs no
-standing-decision change — phase-1.md lists four deliverables and never fixes their order.
+Two consequences worth carrying forward: **testing targets the dev bundle**, because `window.shapez` does not
+exist in web prod builds — extending the smoke test to boot a prod bundle is Stage 1's job. And **cutting the
+`savegame.js -> modloader.js` edge is now a recorded Stage 4 target**; doing it sooner would mean
+engine-boundary surgery before the guard that surgery needs exists.
 
 ## Next step
 
