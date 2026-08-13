@@ -153,6 +153,52 @@ Learned by running code, not by assuming. Each one has already cost time once.
   state of `.github/workflows/ci.yml`. Caveat: that `--ignore-engines` is job-wide, not package-scoped, so it
   would also silently permit a *different* future Node-16-incompatible root devDependency to install rather
   than failing loudly — bounded risk since that job only lints/typechecks, but a known blind spot.
+- **`states/ingame.js`'s `onRender` falls through, in the same synchronous callback that flips the game
+  stage from `s7_warmup` to `s10_gameRunning`, into a real wall-clock-timed `core.tick(dt)`** — before test
+  code watching for that transition can react. This is a plan-inherited nondeterminism bug, not one
+  introduced by the harness: confirmed empirically by running the unfixed harness three times and getting
+  300 vs. 301 ticks' worth of state. `waitForGameRunning` (`test/browser/harness.js`) now forces the
+  transition inside one synchronous `page.evaluate()` that also freezes the frame loop, closing the race.
+  The kind of subtle harness bug that would otherwise flake CI intermittently with no indication of the
+  cause — worth remembering before touching the warmup→running transition again.
+- **A debug-flag guard list is not self-evidently complete just because it exists.** An adversarial
+  verification pass on `SIMULATION_ALTERING_DEBUG_FLAGS` (`test/browser/harness.js`), run between Tasks 5
+  and 6 specifically because the list had never been checked against the source, found two Critical and two
+  Important gaps before any hash was pinned: `rewardsInstant` and `disableUnlockDialog` could each silently
+  corrupt the hash if set in a local `config.local.js` — the latter more severely, since it can make
+  `runTicks` silently stop simulating entirely mid-run (via `shouldPauseGame()` zeroing `logicTimeBudget`)
+  while still reporting a normal-looking tick count; `externalModUrl` and `manualTickOnly` were also
+  missing. All four are now guarded. Lesson for the next flag or the next guard list generally: it has to be
+  checked against every `globalConfig.debug.*` branch reachable from the tick path, not populated by
+  intuition.
+- **`round4Digits` (`src/js/core/utils.js:338-340`) is floor-based, not symmetric around zero.** Not
+  currently triggerable — every value feeding the golden-save hash is IEEE-754-exact across platforms for
+  what the fixture exercises — but if a future cross-platform hash mismatch ever looks like a clean
+  zero-crossing (a value landing at exactly `0` on one platform, `-0.0001` on another), check this function
+  before assuming a real simulation divergence. Found, and ruled out for now, by the same adversarial pass
+  that independently verified the rest of the hashing/serialization pipeline (`stableStringify`,
+  `dumpSimulationSubset`'s atomicity, array-ordering determinism, wall-clock field isolation) sound, with no
+  fixes needed there.
+- **The golden-save fixture's `WARMUP_TICKS` is 300, not the plan's originally-specified 120.** At 120 ticks
+  nothing has reached the belt yet — the miner's `mineDuration` is 150 ticks plus ~24 ticks of ejector
+  handoff, so 174 > 120 — confirmed by literally hitting the fixture generator's own zero-items guard at
+  120. The committed fixture's `timeSeconds` is therefore ~4.9999, not the plan's expected 2.
+- **The golden-save hash held, both same-machine and cross-platform, for the one fixture/tick-count actually
+  measured.** Task 6 Step 2's self-consistency check (two independent `launchGame()` runs — two separate
+  Chromium processes/contexts — on this Windows dev machine) passed on the first attempt: not just matching
+  hashes but byte-identical dumped subset JSON, and the stop-rule was never triggered. Task 7's PR #2 CI run
+  ([31727768465](https://github.com/Skigim/Foundry/actions/runs/31727768465)) then reproduced the reference
+  hash exactly on `ubuntu-latest` — `GOLDEN_SAVE_HASH`, pinned from this Windows machine's run, matched
+  without regenerating anything. This is the actual evidence for the README's determinism claim (see the
+  "Note" in [phase-1.md](roadmap/phase-1.md)'s Stage 0 section), scoped to exactly what was measured: a
+  22-entity miner+20-belt fixture, 600 ticks at a pinned 60 UPS, Windows vs. `ubuntu-latest`. It does not
+  generalize to larger saves, different tick counts, or other platform pairs without separately measuring
+  those.
+- **`browser-test`'s duration with all three tests (boot smoke + both golden-save tests) is 2m55s**,
+  measured in the same CI run. Up from the 2m24s/2m47s recorded above for the boot-smoke-only job. The three
+  `node:test` cases themselves run in ~5.3s combined; the rest is the atlas/bundle build and
+  Playwright/Chromium setup already shared with artifact 4. Still comfortably under the design's 5–10 minute
+  budget.
 
 ## Current state
 
@@ -164,8 +210,15 @@ that runs `yarn test:browser`. This is a real source/tooling change, not docs-on
 before merge, [31702432310](https://github.com/Skigim/Foundry/actions/runs/31702432310), was **fully green
 across all four jobs**: `CI` 1m44s, `test` 16s, `browser-test` 2m47s, `yaml-lint` 28s.
 
-**Stage 0 artifact 4 (boot smoke test) now exists and runs in CI; artifacts 1–3 do not yet.** Also in place,
-as a precursor toward artifact 1, and confirmed cross-platform:
+This branch, `phase-1/stage-0-golden-hash`, lands via `--no-ff` merge on top of that: Stage 0 artifact 1
+(the golden-save simulation hash), the second of the four artifacts to land. Its own last CI run, PR #2
+([31727768465](https://github.com/Skigim/Foundry/actions/runs/31727768465)), was fully green with
+`browser-test`'s "Run browser tests" step reporting `# tests 3` / `# pass 3` / `# fail 0` — the boot smoke
+test plus both golden-save tests (self-consistency, then the pinned-hash reference check).
+
+**Stage 0 artifacts 1 (golden-save simulation hash) and 4 (boot smoke test) now exist and run in CI;
+artifacts 2 and 3 do not yet.** Also in place, as a precursor toward artifact 1, and confirmed
+cross-platform:
 
 - `test/rng.determinism.test.js` — 7 tests, `node:test` + `node:assert`, zero new dependencies. Covers
   same-seed equality, different-seed inequality, numeric/string seed equivalence, `reseed`/`setSeed`, and
@@ -186,11 +239,24 @@ the test script has no dependencies of its own.
 (`node --test "test/browser/**/*.test.js"`) are now separate scripts, deliberately: `test/browser/**` needs a
 real dev build, Playwright, and a full `yarn install` first, and `yarn test` is meant to stay a few-second,
 dependency-free check. `test/browser/harness.js` is the shared module — `assertBuildPresent`,
-`startStaticServer`, `launchGame`, `waitForMainMenu` — that Task 5 will extend with the determinism helpers
+`startStaticServer`, `launchGame`, `waitForMainMenu` — that Branch B extended with the determinism helpers
 for artifact 1. `test/browser/boot.smoke.test.js` is artifact 4 itself: it asserts the dev bundle reaches
 `document.body.id === "state_MainMenuState"` with zero uncaught page errors. It runs in CI's `browser-test`
 job, after the dev bundle and atlas are built and Chromium is installed via `npx playwright install
 --with-deps chromium`.
+
+**Artifact 1 (golden-save simulation hash) is `test/browser/golden_save.test.js`, backed by determinism
+helpers Branch B added to `test/browser/harness.js`**: `prepareDeterministicRun` (pins the tick rate to 60
+and guards `SIMULATION_ALTERING_DEBUG_FLAGS`), `loadFixtureGame`, `runTicks`, and `hashSimulationState`.
+`test/browser/dump_state.js` and `test/browser/generate_fixture.js` are the one-off scripts used to produce
+and inspect the committed fixture, not part of the test run itself. The fixture is
+`test/fixtures/golden_save.json` — a miner plus 20 belts, 22 entities, deliberately short of back-pressure
+(1 item in flight) — and the reference value is `GOLDEN_SAVE_HASH =
+"0416cc3d1585253c697d0456ac88ec3f2d73f5d23730f5215bb1281c93f1fea2"`, pinned from an actual measured run, not
+invented. Two tests: same-run self-consistency (two independent `launchGame()` calls must hash identically),
+then a reference-hash comparison against the pinned value. Both settled implementation choices the design
+spec left open are now fixed by this fixture: **600 ticks at a pinned 60 UPS**, and **a fixture of a miner
+plus 20 belts**.
 
 **The pre-existing `TSLint` failures are fixed** (`phase-1/stage-0-tslint-fix`, fast-forwarded into master
 at `01a766fe` — single commit, so no `--no-ff`). All 7 were type-only JSDoc/tsc issues, unrelated to the
@@ -203,16 +269,17 @@ CI-wiring work: `mod_interface.js`'s `afterPrams`/`extendsPrams` typedefs used a
 did — previously this set `NaN%` as the boot progress bar's width. Everything else is compile-time only;
 JSDoc types are stripped before the real bundle ships.
 
-Remaining, using phase-1.md's numbering: **(1) golden-save simulation hash, (2) draw-call recording,
-(3) perf benchmark** — artifact 4 (boot smoke test) is done. Artifact 1 is designed (below) and is Branch B's
-work (Tasks 5–7); 2 and 3 are not yet specced.
+Remaining, using phase-1.md's numbering: **(2) draw-call recording, (3) perf benchmark.** Artifacts 1
+(golden-save simulation hash) and 4 (boot smoke test) are both done, landed, and enforced in CI. 2 and 3 are
+not yet specced; both are expected to reuse `test/browser/harness.js`, per the design spec below, but each
+needs its own spec.
 
-**Stage 0's execution substrate is decided, and Branch A has implemented it.**
+**Stage 0's execution substrate is decided, and Branches A and B have both implemented on it.**
 [docs/superpowers/specs/2026-08-12-stage0-browser-harness-design.md](superpowers/specs/2026-08-12-stage0-browser-harness-design.md)
 is the authoritative spec and is unchanged; read it before writing any Stage 0 test code. In short: one substrate for the whole
 stage — a Playwright harness driving a **real built dev bundle** — with the boot smoke test (artifact 4) built
-**first**, now landed, and the golden-save hash (artifact 1) layered on top next, on Branch B. Artifacts 2 and
-3 are expected to reuse the same harness.
+**first**, then the golden-save hash (artifact 1) layered on top by Branch B. Both are now landed. Artifacts
+2 and 3 are expected to reuse the same harness.
 
 Why, briefly. An earlier design tried to run the simulation under plain Node behind a few hand-rolled shims;
 independent review disproved its premise and it is kept, marked superseded, at
@@ -231,61 +298,32 @@ engine-boundary surgery before the guard that surgery needs exists.
 
 ## Next step
 
-**Branch A (Tasks 1–4) is done and merged to master.** All four tasks landed: the atlas gate proof (Task 1),
-the Playwright harness and boot smoke test (Task 2), wiring `yarn test:browser` into CI's `browser-test` job
-(Task 3), and this doc/roadmap update (Task 4). Stage 0 artifact 4 is complete and enforced in CI.
+**Branch A (Tasks 1–4) and Branch B (Tasks 5–7) are both done and merged to master.** Branch A: the atlas
+gate proof (Task 1), the Playwright harness and boot smoke test (Task 2), wiring `yarn test:browser` into
+CI's `browser-test` job (Task 3), and its doc/roadmap update (Task 4) — landing Stage 0 artifact 4. Branch B:
+determinism controls and the committed fixture (Task 5), the golden-save hash test itself (Task 6), and CI
+confirmation plus this doc/roadmap update (Task 7) — landing Stage 0 artifact 1. Both are complete and
+enforced in CI.
 
-**Next: Branch B — golden-save hash (Tasks 5–7).**
-[docs/superpowers/plans/2026-08-12-stage0-browser-harness.md](superpowers/plans/2026-08-12-stage0-browser-harness.md)
-has the exact steps, file contents, commands and expected outputs; read it before writing any code. Start
-with:
+**Next: spec artifact 2 (draw-call recording) or artifact 3 (perf benchmark), per
+[docs/roadmap/phase-1.md](roadmap/phase-1.md)'s Stage 0 section.** Both are expected to reuse
+`test/browser/harness.js` — `launchGame`, `waitForMainMenu`, `loadFixtureGame`, `runTicks`, and the
+determinism controls are all already generic, not golden-save-specific — but neither has a design spec yet,
+unlike artifact 1's (superseded once, then rewritten around the browser harness; see "Current state" above).
+Write that spec before writing test code, per the standing pattern this stage has used twice now.
 
-```bash
-git checkout master && git pull && git checkout -b phase-1/stage-0-golden-hash
-```
+A few things worth carrying into that spec regardless of which artifact comes first, learned the hard way on
+Branch B and unlikely to be specific to golden-save hashing:
 
-- **Task 5** — determinism controls (`prepareDeterministicRun`, `loadFixtureGame`, `runTicks`,
-  `hashSimulationState`, added to `test/browser/harness.js`) and the committed fixture save.
-- **Task 6** — the golden-save hash test itself. Run it twice locally to prove self-consistency *before*
-  pinning a reference hash — do not reorder this (see the standing rule at the bottom of this doc).
-- **Task 7** — confirm CI green, record Branch B's findings in this same handoff, amend the roadmap Status
-  paragraph Task 4 just wrote, merge with `--no-ff`.
-
-The reference hash and fixture must come from one machine's actual measured run — never invented to make a
-test file look complete.
-
-### If you are running this with parallel agents
-
-The plan is written for sequential execution and **Tasks 2–7 genuinely do not parallelize**. Three hard
-serializations, each of which produces silent corruption rather than a clean failure if ignored:
-
-- **One `build/` directory, one atlas.** Every browser test runs against the same built dev bundle at the
-  repo root. Two agents building or testing at once interleave writes into `build/` and `res_built/`, and the
-  loser sees a half-written bundle — which, per the constraint above, manifests as an unexplained timeout at
-  "Downloading resources", not an error naming the cause.
-- **One branch, sequential commits.** Task 3 edits the CI job Task 1 created; Task 6 pins a hash produced by
-  Task 5's fixture; Task 7 amends the roadmap paragraph Task 4 wrote. Each task's starting state is the prior
-  task's commit.
-- **The reference values must come from one machine's measured run.** `GOLDEN_SAVE_HASH` and
-  `test/fixtures/golden_save.json` are captured, not authored. An agent that has not actually run
-  `dump_state.js` cannot supply them, and must never invent one to make a test file look complete.
-
-What *does* parallelize usefully is **verification, not construction**: independent review of the harness
-against the spec, adversarial checks on the determinism controls (the four hazards in
-`prepareDeterministicRun` are the highest-value thing to attack), and a fresh-eyes pass asking what the plan
-assumed but never measured. Fan out on those; keep the edits on one thread.
-
-Two failure modes worth pre-empting, because both end in a green test that proves nothing:
-
-- **A hash test over a nondeterministic run.** Plan Task 6 Step 2 exists precisely to prove self-consistency
-  *before* any reference is pinned. Do not reorder it.
-- **A test that passes because the simulation never ticked.** `game_time.js:87` zeroes the logic budget when
-  `root.hud.shouldPauseGame()` is true, so `performTicks` can silently run zero ticks. The
-  `ticksRun === TICK_COUNT` assertion is the guard; it is not optional.
-
-And the standing rule that most needs saying to an agent under time pressure: **a committed reference value
-is never regenerated to make CI green.** If the hash moves, that is the finding. `dump_state.js` exists to
-say *what* moved.
+- **A committed reference value is never regenerated to make CI green.** If a number moves, that is the
+  finding, not an obstacle. `dump_state.js` is the precedent for a script that says *what* moved rather than
+  just that something did.
+- **Self-consistency before pinning a reference, always** — run twice locally (or however many times the
+  new artifact's nondeterminism surface warrants) before committing anything meant to be stable. Task 6 Step
+  2 is the precedent; reordering it produces a green test that proves nothing.
+- **Check any new guard list (debug flags, config fields, whatever the new artifact is sensitive to) against
+  the actual source, not by intuition.** The adversarial pass on `SIMULATION_ALTERING_DEBUG_FLAGS` (see
+  Empirical constraints) found real gaps in a list that looked complete.
 
 ## Open questions
 
@@ -298,8 +336,9 @@ say *what* moved.
   required-check configuration will treat a skipped job differently from a passing one. Decide deliberately;
   do not bundle it into a task.
 - Whether to bump the deprecated action versions (see Empirical constraints) as a standalone change.
-- Local branches `phase-1/stage-0-harness` and `phase-1/stage-0-ci` are merged but not deleted; add
-  `phase-1/stage-0-tslint-fix` and `phase-1/stage-0-boot-smoke` to that list.
+- Local branches `phase-1/stage-0-harness`, `phase-1/stage-0-ci`, and `phase-1/stage-0-tslint-fix` were
+  deleted (confirmed merged) in Task 7. `phase-1/stage-0-boot-smoke` and `phase-1/stage-0-golden-hash` — the
+  two branches from this plan — are now merged too, and remain undeleted.
 
 Settled since the last session, and recorded here so they are not reopened: tick count (600 at a pinned
 60 UPS), fixture composition (a miner plus 20 belts, deliberately short of back-pressure), Playwright browser

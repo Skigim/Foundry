@@ -40,11 +40,13 @@ detectable.
 4. **Boot smoke test.** The *built* artifact launches, loads a save, ticks, and does not crash. Exists
    specifically for Stage 1, where failures are bundle-level rather than logic-level.
 
-**Status.** Artifact 4 landed 2026-08-12: `test/browser/boot.smoke.test.js`, running against a real dev
-bundle in a real browser via `test/browser/harness.js`, enforced by CI's `browser-test` job. The substrate
-is specified in
-[docs/superpowers/specs/2026-08-12-stage0-browser-harness-design.md](../superpowers/specs/2026-08-12-stage0-browser-harness-design.md).
-Artifacts 1, 2 and 3 remain outstanding.
+**Status.** Artifacts 4 (boot smoke test) and 1 (golden-save simulation hash) landed 2026-08-12 as
+`test/browser/boot.smoke.test.js` and `test/browser/golden_save.test.js`, both running against a real dev
+bundle in a real browser via `test/browser/harness.js` and enforced by CI's `browser-test` job. The
+substrate is specified in
+[docs/superpowers/specs/2026-08-12-stage0-browser-harness-design.md](../superpowers/specs/2026-08-12-stage0-browser-harness-design.md);
+artifacts 2 and 3 are expected to reuse the same harness but each needs its own spec. **Done when** is not
+yet met: artifacts 2 (draw-call recording) and 3 (perf benchmark) remain outstanding.
 
 **Anti-bloat policy (binding for all of Phase 1):**
 
@@ -88,10 +90,15 @@ simulation cannot be loaded at all without the full app bundle, that is not mere
 early, cheap measurement of how entangled the engine/content boundary really is — Stage 4's problem
 surfacing at the best possible time.
 
-**Note — this stage validates the project's premise.** The README states "the simulation should always
-produce identical results from identical inputs." If golden-save hashing turns out to be unstable across
-runs or platforms, that principle is not currently true, and that is a finding worth having *before*
-Phase 2 builds an engine on it.
+**Note — this stage validates the project's premise, and so far it holds.** The README states "the
+simulation should always produce identical results from identical inputs." Two separate checks confirm
+this for the one fixture and tick count measured so far (a miner + 20 belts, 600 ticks at a pinned 60 UPS):
+same-machine self-consistency (two independent `launchGame()` runs on Windows produced byte-identical
+dumped state, not just matching hashes) and cross-platform reproduction (the reference hash, pinned from
+that Windows run, matched exactly on `ubuntu-latest` in CI — see
+[docs/handoff.md](../handoff.md#empirical-constraints)). Neither result generalizes beyond what was
+measured: a larger save, a different tick count, or a different platform pair could still diverge, and this
+note should be revisited if one ever does.
 
 **Done when:** all four artifacts run in CI, and the determinism claim is either confirmed or documented
 as not-yet-true with known causes.
