@@ -143,6 +143,11 @@ jobs:
             - name: Install Playwright Chromium
               run: npx playwright install --with-deps chromium
 
+            - name: Verify the browser tests exist
+              run: |
+                  test -f test/browser/boot.smoke.test.js
+                  test -f test/browser/golden_save.test.js
+
             - name: Run browser tests
               run: yarn test:browser
 
