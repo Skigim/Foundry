@@ -191,10 +191,47 @@ export async function waitForMainMenu(page, timeoutMs = 90000) {
             timeout: timeoutMs,
         });
     } catch (err) {
+        // Two known causes produce this same symptom (timeout, never reaching
+        // the main menu) with a misleading preloader-status message, so check
+        // for them before falling back to that message alone.
+        const diagnosis = await page
+            .evaluate(() => {
+                // window.shapez only exists on a dev build (exposeExports() is
+                // gated on G_IS_DEV || G_IS_STANDALONE - see modloader.js). A
+                // prod bundle would otherwise surface as an opaque TypeError
+                // deep inside a later page.evaluate() instead of here.
+                if (!window.shapez) {
+                    return "window.shapez is undefined - this looks like a prod build, not a dev build.";
+                }
+
+                // fastGameEnter routes straight into InGameState, so
+                // document.body.id never becomes state_MainMenuState.
+                // noArtificialDelays can produce the same symptom by
+                // collapsing menu transition timings. Both are standard,
+                // commonly-set local-dev convenience flags from the
+                // gitignored config.local.js (see config.local.template.js),
+                // not a real boot failure.
+                const debug = window.shapez.globalConfig.debug;
+                const offenders = ["fastGameEnter", "noArtificialDelays"].filter(flag => debug[flag]);
+                if (offenders.length > 0) {
+                    const flagList = offenders.join(", ");
+                    return (
+                        `globalConfig.debug has ${flagList} set (see src/js/core/config.local.js) - that ` +
+                        "is why the main menu was never reached, not a preloader/atlas problem."
+                    );
+                }
+
+                return null;
+            })
+            .catch(() => "(could not inspect window.shapez to diagnose further)");
+
         // PreloadState hangs rather than throwing when resource loading fails, so
         // its own status line is the only thing that says how far boot got.
         const status = await page.textContent("#ll_preload_status").catch(() => "(unavailable)");
-        throw new Error(`Never reached the main menu. Preloader status: "${status}"`, { cause: err });
+        const suffix = diagnosis ? ` ${diagnosis}` : "";
+        throw new Error(`Never reached the main menu. Preloader status: "${status}".${suffix}`, {
+            cause: err,
+        });
     }
 }
 
@@ -462,7 +499,12 @@ export async function dumpSimulationSubset(page) {
         // realtimeSeconds is performance.now()-derived (game_time.js:55).
         // Excluded regardless of the performTicks control above, so the hash
         // survives someone later reintroducing a frame into the measured window.
-        delete subset.time.realtimeSeconds;
+        // Guarded rather than assumed present: if a future edit to HASHED_KEYS
+        // ever drops "time", this would otherwise throw inside the page and
+        // surface as an opaque "Evaluation failed: TypeError".
+        if (subset.time) {
+            delete subset.time.realtimeSeconds;
+        }
         return { subset };
     }, HASHED_KEYS);
 

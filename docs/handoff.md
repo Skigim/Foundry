@@ -124,8 +124,12 @@ Learned by running code, not by assuming. Each one has already cost time once.
 - **`assert` is `window.assert`**, installed as an import side effect of `core/assert.js`. Any module
   calling it cannot be exercised outside a browser until the harness decides how to shim browser globals.
 - **`require.context` (webpack-only) is called at registration time** in `component_registry.js:56` and
-  `modloader.js:114`, so the component registry cannot load outside a webpack-compatible bundler. This
-  blocks the golden-save hash artifact and is a point in Rspack's favor for Stage 1.
+  `modloader.js:114`, so the component registry cannot load outside a webpack-compatible bundler. The
+  golden-save hash artifact landed anyway — not by resolving this constraint, but by building and serving a
+  real webpack bundle (`test/browser/harness.js`'s whole design) rather than trying to load the component
+  registry directly under Node. The constraint remains true and unresolved for any *other* use case that
+  would want a small bundle without the full asset pipeline, and is still a point in Rspack's favor for
+  Stage 1.
 - **`browser-test`'s full duration, including the actual Playwright boot test, is 2m24s.** Measured in CI run
   [31664495889](https://github.com/Skigim/Foundry/actions/runs/31664495889) — the first run where the job
   runs `yarn test:browser` rather than stopping after the atlas/bundle build. All four jobs green in that
@@ -202,19 +206,20 @@ Learned by running code, not by assuming. Each one has already cost time once.
 
 ## Current state
 
-`origin/master`'s last change is the `d9d5ff25` merge of `phase-1/stage-0-boot-smoke`
-([PR #1](https://github.com/Skigim/Foundry/pull/1), now **merged**, not draft), which landed Stage 0
-artifact 4 end to end: the `browser-test` CI job, `test/browser/harness.js`,
-`test/browser/boot.smoke.test.js`, `package.json`'s `yarn test`/`yarn test:browser` split, and the CI step
-that runs `yarn test:browser`. This is a real source/tooling change, not docs-only. The branch's last CI run
-before merge, [31702432310](https://github.com/Skigim/Foundry/actions/runs/31702432310), was **fully green
-across all four jobs**: `CI` 1m44s, `test` 16s, `browser-test` 2m47s, `yaml-lint` 28s.
-
-This branch, `phase-1/stage-0-golden-hash`, lands via `--no-ff` merge on top of that: Stage 0 artifact 1
-(the golden-save simulation hash), the second of the four artifacts to land. Its own last CI run, PR #2
-([31727768465](https://github.com/Skigim/Foundry/actions/runs/31727768465)), was fully green with
-`browser-test`'s "Run browser tests" step reporting `# tests 3` / `# pass 3` / `# fail 0` — the boot smoke
-test plus both golden-save tests (self-consistency, then the pinned-hash reference check).
+`origin/master`'s last change is the `108b93f3` merge of `phase-1/stage-0-golden-hash`
+([PR #2](https://github.com/Skigim/Foundry/pull/2), now **merged**, not draft), on top of the earlier
+`d9d5ff25` merge of `phase-1/stage-0-boot-smoke` ([PR #1](https://github.com/Skigim/Foundry/pull/1), also
+**merged**). Both branches merged with `--no-ff`, per the standing git-workflow convention. Together they
+landed Stage 0 end to end: `phase-1/stage-0-boot-smoke` landed artifact 4 (the `browser-test` CI job,
+`test/browser/harness.js`, `test/browser/boot.smoke.test.js`, `package.json`'s `yarn test`/`yarn test:browser`
+split, and the CI step that runs `yarn test:browser`); `phase-1/stage-0-golden-hash` landed artifact 1 (the
+golden-save simulation hash) on top of that. This is a real source/tooling change, not docs-only.
+`phase-1/stage-0-boot-smoke`'s last CI run before its merge,
+[31702432310](https://github.com/Skigim/Foundry/actions/runs/31702432310), was **fully green across all four
+jobs**: `CI` 1m44s, `test` 16s, `browser-test` 2m47s, `yaml-lint` 28s. `phase-1/stage-0-golden-hash`'s own
+last CI run, PR #2 ([31727768465](https://github.com/Skigim/Foundry/actions/runs/31727768465)), was also
+fully green, with `browser-test`'s "Run browser tests" step reporting `# tests 3` / `# pass 3` / `# fail 0`
+— the boot smoke test plus both golden-save tests (self-consistency, then the pinned-hash reference check).
 
 **Stage 0 artifacts 1 (golden-save simulation hash) and 4 (boot smoke test) now exist and run in CI;
 artifacts 2 and 3 do not yet.** Also in place, as a precursor toward artifact 1, and confirmed

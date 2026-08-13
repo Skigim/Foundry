@@ -24,7 +24,10 @@ function sequence(seed, count = 5) {
 // if float behaviour ever shifts, this is the assertion that catches it. Do not
 // regenerate these to make CI pass — a change here means determinism broke.
 const SEED_42_FIRST_5 = [
-    0.6848634963389486, 0.5463244677521288, 0.8455933185759932, 0.19908552314154804,
+    0.6848634963389486,
+    0.5463244677521288,
+    0.8455933185759932,
+    0.19908552314154804,
     0.5637381218839437,
 ];
 
