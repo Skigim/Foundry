@@ -61,6 +61,71 @@ jobs:
             - name: Run tests
               run: yarn test
 
+    browser-test:
+        name: browser-test
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout repo
+              uses: actions/checkout@v2
+
+            - name: Setup Node
+              uses: actions/setup-node@v2-beta
+              with:
+                  node-version: 22.x
+
+            - name: Install ffmpeg
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y ffmpeg
+
+            # imgres.buildAtlas shells out to `java -jar`. Fail here, legibly,
+            # rather than inside a task that swallows its own exceptions.
+            - name: Verify Java is available
+              run: java -version
+
+            - name: Cache texture-packer jar
+              uses: actions/cache@v4
+              with:
+                  path: gulp/runnable-texturepacker.jar
+                  key: runnable-texturepacker-jar-v1
+
+            - name: Install Yarn Dependencies
+              run: |
+                  yarn
+                  cd gulp/
+                  yarn
+                  cd ..
+
+            # Webpack 4 dies on Node 17+ without the legacy OpenSSL provider.
+            # Scoped to the build steps so the tests still run on plain Node 22.
+            - name: Build dev bundle
+              working-directory: gulp
+              env:
+                  NODE_OPTIONS: --openssl-legacy-provider
+              run: |
+                  yarn gulp build.prepare.dev
+                  yarn gulp js.web-localhost.dev
+                  yarn gulp html.web-localhost.dev
+
+            # gulp/image-resources.js:111 catches its own failures and still calls
+            # cb(), so a broken atlas build reports success. Without sprites the
+            # game hangs forever on "Downloading resources" (states/preload.js:211
+            # returns a promise that never resolves), which is a confusing way to
+            # find out. Assert it here instead.
+            - name: Verify the atlas actually built
+              run: |
+                  ls -la res_built/atlas/ || true
+                  if [ -z "$(ls res_built/atlas/*.png 2>/dev/null)" ]; then
+                      echo "::error::imgres.buildAtlas produced no sprites (it fails silently - see gulp/image-resources.js:111)"
+                      exit 1
+                  fi
+
+            - name: Verify the bundle actually built
+              run: |
+                  test -f build/index.html
+                  test -f build/bundle.js
+                  test -f build/main.css
+
     yaml-lint:
         name: yaml-lint
         runs-on: ubuntu-latest
