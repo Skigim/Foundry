@@ -1,0 +1,428 @@
+{
+    "savegameVersion": 1010,
+    "dump": {
+        "camera": {
+            "zoomLevel": 1.25,
+            "center": {
+                "x": -160,
+                "y": 64
+            }
+        },
+        "time": {
+            "timeSeconds": 4.9999,
+            "speed": {
+                "$": "regular",
+                "data": {}
+            },
+            "realtimeSeconds": 0
+        },
+        "map": {
+            "seed": 56612
+        },
+        "gameMode": {
+            "$": "regularMode",
+            "data": {}
+        },
+        "entityMgr": {
+            "nextUid": 10022
+        },
+        "hubGoals": {
+            "level": 1,
+            "storedShapes": {},
+            "upgradeLevels": {
+                "belt": 0,
+                "miner": 0,
+                "processors": 0,
+                "painting": 0
+            }
+        },
+        "entities": [
+            {
+                "uid": 10000,
+                "components": {
+                    "StaticMapEntity": {
+                        "origin": {
+                            "x": -2,
+                            "y": -2
+                        },
+                        "rotation": 0,
+                        "originalRotation": 0,
+                        "code": 26
+                    },
+                    "ItemProcessor": {
+                        "nextOutputSlot": 0
+                    },
+                    "WiredPins": {
+                        "slots": [
+                            {
+                                "value": {
+                                    "$": "shape",
+                                    "data": "CuCuCuCu"
+                                }
+                            }
+                        ]
+                    }
+                }
+            },
+            {
+                "uid": 10001,
+                "components": {
+                    "StaticMapEntity": {
+                        "origin": {
+                            "x": 19,
+                            "y": -15
+                        },
+                        "rotation": 0,
+                        "originalRotation": 0,
+                        "code": 7
+                    },
+                    "Miner": {
+                        "lastMiningTime": 2.5,
+                        "itemChainBuffer": []
+                    },
+                    "ItemEjector": {
+                        "slots": [
+                            {
+                                "item": null,
+                                "progress": 1
+                            }
+                        ]
+                    }
+                }
+            },
+            {
+                "uid": 10002,
+                "components": {
+                    "StaticMapEntity": {
+                        "origin": {
+                            "x": 19,
+                            "y": -16
+                        },
+                        "rotation": 0,
+                        "originalRotation": 0,
+                        "code": 1
+                    }
+                }
+            },
+            {
+                "uid": 10003,
+                "components": {
+                    "StaticMapEntity": {
+                        "origin": {
+                            "x": 19,
+                            "y": -17
+                        },
+                        "rotation": 0,
+                        "originalRotation": 0,
+                        "code": 1
+                    }
+                }
+            },
+            {
+                "uid": 10004,
+                "components": {
+                    "StaticMapEntity": {
+                        "origin": {
+                            "x": 19,
+                            "y": -18
+                        },
+                        "rotation": 0,
+                        "originalRotation": 0,
+                        "code": 1
+                    }
+                }
+            },
+            {
+                "uid": 10005,
+                "components": {
+                    "StaticMapEntity": {
+                        "origin": {
+                            "x": 19,
+                            "y": -19
+                        },
+                        "rotation": 0,
+                        "originalRotation": 0,
+                        "code": 1
+                    }
+                }
+            },
+            {
+                "uid": 10006,
+                "components": {
+                    "StaticMapEntity": {
+                        "origin": {
+                            "x": 19,
+                            "y": -20
+                        },
+                        "rotation": 0,
+                        "originalRotation": 0,
+                        "code": 1
+                    }
+                }
+            },
+            {
+                "uid": 10007,
+                "components": {
+                    "StaticMapEntity": {
+                        "origin": {
+                            "x": 19,
+                            "y": -21
+                        },
+                        "rotation": 0,
+                        "originalRotation": 0,
+                        "code": 1
+                    }
+                }
+            },
+            {
+                "uid": 10008,
+                "components": {
+                    "StaticMapEntity": {
+                        "origin": {
+                            "x": 19,
+                            "y": -22
+                        },
+                        "rotation": 0,
+                        "originalRotation": 0,
+                        "code": 1
+                    }
+                }
+            },
+            {
+                "uid": 10009,
+                "components": {
+                    "StaticMapEntity": {
+                        "origin": {
+                            "x": 19,
+                            "y": -23
+                        },
+                        "rotation": 0,
+                        "originalRotation": 0,
+                        "code": 1
+                    }
+                }
+            },
+            {
+                "uid": 10010,
+                "components": {
+                    "StaticMapEntity": {
+                        "origin": {
+                            "x": 19,
+                            "y": -24
+                        },
+                        "rotation": 0,
+                        "originalRotation": 0,
+                        "code": 1
+                    }
+                }
+            },
+            {
+                "uid": 10011,
+                "components": {
+                    "StaticMapEntity": {
+                        "origin": {
+                            "x": 19,
+                            "y": -25
+                        },
+                        "rotation": 0,
+                        "originalRotation": 0,
+                        "code": 1
+                    }
+                }
+            },
+            {
+                "uid": 10012,
+                "components": {
+                    "StaticMapEntity": {
+                        "origin": {
+                            "x": 19,
+                            "y": -26
+                        },
+                        "rotation": 0,
+                        "originalRotation": 0,
+                        "code": 1
+                    }
+                }
+            },
+            {
+                "uid": 10013,
+                "components": {
+                    "StaticMapEntity": {
+                        "origin": {
+                            "x": 19,
+                            "y": -27
+                        },
+                        "rotation": 0,
+                        "originalRotation": 0,
+                        "code": 1
+                    }
+                }
+            },
+            {
+                "uid": 10014,
+                "components": {
+                    "StaticMapEntity": {
+                        "origin": {
+                            "x": 19,
+                            "y": -28
+                        },
+                        "rotation": 0,
+                        "originalRotation": 0,
+                        "code": 1
+                    }
+                }
+            },
+            {
+                "uid": 10015,
+                "components": {
+                    "StaticMapEntity": {
+                        "origin": {
+                            "x": 19,
+                            "y": -29
+                        },
+                        "rotation": 0,
+                        "originalRotation": 0,
+                        "code": 1
+                    }
+                }
+            },
+            {
+                "uid": 10016,
+                "components": {
+                    "StaticMapEntity": {
+                        "origin": {
+                            "x": 19,
+                            "y": -30
+                        },
+                        "rotation": 0,
+                        "originalRotation": 0,
+                        "code": 1
+                    }
+                }
+            },
+            {
+                "uid": 10017,
+                "components": {
+                    "StaticMapEntity": {
+                        "origin": {
+                            "x": 19,
+                            "y": -31
+                        },
+                        "rotation": 0,
+                        "originalRotation": 0,
+                        "code": 1
+                    }
+                }
+            },
+            {
+                "uid": 10018,
+                "components": {
+                    "StaticMapEntity": {
+                        "origin": {
+                            "x": 19,
+                            "y": -32
+                        },
+                        "rotation": 0,
+                        "originalRotation": 0,
+                        "code": 1
+                    }
+                }
+            },
+            {
+                "uid": 10019,
+                "components": {
+                    "StaticMapEntity": {
+                        "origin": {
+                            "x": 19,
+                            "y": -33
+                        },
+                        "rotation": 0,
+                        "originalRotation": 0,
+                        "code": 1
+                    }
+                }
+            },
+            {
+                "uid": 10020,
+                "components": {
+                    "StaticMapEntity": {
+                        "origin": {
+                            "x": 19,
+                            "y": -34
+                        },
+                        "rotation": 0,
+                        "originalRotation": 0,
+                        "code": 1
+                    }
+                }
+            },
+            {
+                "uid": 10021,
+                "components": {
+                    "StaticMapEntity": {
+                        "origin": {
+                            "x": 19,
+                            "y": -35
+                        },
+                        "rotation": 0,
+                        "originalRotation": 0,
+                        "code": 1
+                    }
+                }
+            }
+        ],
+        "beltPaths": [
+            {
+                "entityPath": [
+                    10002,
+                    10003,
+                    10004,
+                    10005,
+                    10006,
+                    10007,
+                    10008,
+                    10009,
+                    10010,
+                    10011,
+                    10012,
+                    10013,
+                    10014,
+                    10015,
+                    10016,
+                    10017,
+                    10018,
+                    10019,
+                    10020,
+                    10021
+                ],
+                "items": [
+                    [
+                        17.3539,
+                        {
+                            "$": "color",
+                            "data": "red"
+                        }
+                    ]
+                ],
+                "spacingToFirstItem": 2.6459
+            }
+        ],
+        "pinnedShapes": {
+            "shapes": []
+        },
+        "waypoints": {
+            "waypoints": [
+                {
+                    "label": null,
+                    "center": {
+                        "x": 0,
+                        "y": 0
+                    },
+                    "zoomLevel": 3,
+                    "layer": "regular"
+                }
+            ]
+        },
+        "modExtraData": {}
+    }
+}
