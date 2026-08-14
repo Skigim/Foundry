@@ -11,7 +11,7 @@ Living context for picking up work on Foundry in a fresh session. To use it, poi
 | Empirical constraints | Something is learned by running code. Append-only; never delete a constraint without proving it no longer holds. |
 | Current state / Next step / Open questions | Every session. |
 
-Last updated: 2026-08-13
+Last updated: 2026-08-14
 
 ---
 
@@ -38,6 +38,18 @@ Settled. Do not re-litigate without new evidence.
 - **Feature branches merge with `--no-ff`** for the atomic-revert hatch. Single-commit branches
   fast-forward. Every commit on a branch must be green on its own.
 - **Work in very small, individually verifiable commits.**
+- **Stage 0 artifact 3 (perf benchmark) is specced and built before artifact 2 (draw-call recording).**
+  Artifact 3's pre-Stage-1 baseline number can only be taken while the current webpack build still exists;
+  once Stage 1 swaps the bundler, the "before" half of Phase 1's own performance claim is gone permanently.
+  Artifact 2 exists only for Stage 3 and has no equivalent expiry.
+- **Artifact 3's fixture is a real, hand-played savegame, not a generated one.** The bottleneck
+  ([shapez.io#1021](https://github.com/tobspr-games/shapez.io/issues/1021)) is per-system re-checking of
+  on-screen entities, so it scales with *entity variety* on screen, not raw count. A synthetic belt grid has
+  the count but not the mix. A save file is also inert — no generator code to maintain across Stages 1–4.
+- **The automated perf number is measured in the browser only; the desktop build is hand-checked.** The two
+  differ (Electron 16 bundles Chromium 96, and its launch flags change GPU behavior — see
+  `electron/package.json`), but the cost being optimized is JS, not GPU, so a win carries to both. Doubling
+  the harness to measure both is not worth it; record desktop numbers by hand around Stage 3 instead.
 
 ## Empirical constraints
 
@@ -145,6 +157,12 @@ Learned by running code, not by assuming. Each one has already cost time once.
   available` error. FFmpeg ~6.x (what Ubuntu 24.04's `apt-get install ffmpeg` provides, i.e. what CI already
   runs) does not trigger this. A real version-skew bug in a pinned npm dependency, not this plan's code —
   worth knowing before re-diagnosing it from scratch on a machine with a newer local ffmpeg.
+  **The exact fix, applied on this dev machine 2026-08-14:** `capabilities.js:18` reads
+  `/^\s*([D ])([E ]) ([^ ]+) +(.*)$/`; changing the literal space before `([^ ]+)` to ` +` makes it accept
+  either spacing and works against both ffmpeg 6.x and 9.x. Verified: ffmpeg 9 prints ` DE  mp3` (two
+  spaces) for `-formats`, while `-codecs` and `-encoders` still use one space, so only `formatRegexp` needs
+  it. **This lives in `gulp/node_modules` and is destroyed by any `yarn install` in `gulp/`** — expect to
+  reapply it, and treat a returning `Output format mp3 is not available` as exactly this and nothing more.
 - **The plan's documented Node-16 CI fallback (pin `playwright` to `1.40.1`) is unsafe and was not used.** It
   does fix the Node-16 `yarn install` engines-check failure, but that old a Playwright version predates
   Ubuntu 24.04 "noble"'s `libasound2` → `libasound2t64` apt package rename, so it then breaks `browser-test`'s
@@ -203,6 +221,45 @@ Learned by running code, not by assuming. Each one has already cost time once.
   `node:test` cases themselves run in ~5.3s combined; the rest is the atlas/bundle build and
   Playwright/Chromium setup already shared with artifact 4. Still comfortably under the design's 5–10 minute
   budget.
+- **`NODE_OPTIONS=--openssl-legacy-provider` must be exported before gulp starts, and cannot be reliably
+  threaded through a one-line `cmd /c "set X=... && ..."` invocation** from this environment — the quoting is
+  mangled between the bash layer and `cmd`, the flag silently never arrives, and webpack then dies mid-watch
+  with `error:0308010C:digital envelope routines::unsupported`. The failure is easy to misread: gulp's
+  earlier tasks all succeed and browser-sync starts serving, so `http://localhost:3005` answers normally and
+  only `bundle.js` 404s. **Fix in place:** `.claude/dev-server.cmd` sets the variable in a real script file
+  and runs `yarn gulp`; `.claude/launch.json` points at it. Both are untracked as of this writing.
+- **The dev web build is not demo-limited, despite saying "DEMO" everywhere.** Measured at runtime against
+  the running game, not inferred: `isLimitedVersion()` is `false`, and `getHasExtendedLevelsAndFreeplay`,
+  `getHasExtendedUpgrades`, `getHasUnlimitedSavegames`, and `getHasExtendedSettings` are all `true`.
+  `restriction_manager.js:72` makes any `G_IS_DEV` build unrestricted unless the URL contains `demo`. The
+  branding is cosmetic and checks something else entirely: `utils.js:772` returns `logo_demo.png` for any
+  browser build not signed in via Steam SSO, `src/html/index.html:4` hardcodes the page title, and
+  `main_menu.js:148`'s Steam sign-in panel is gated on SSO state, never on `isLimitedVersion()`. Do not spend
+  time "unlocking" this again.
+- **The in-game fullscreen toggle is standalone-only by design, not a demo restriction.**
+  `application_settings.js:192` enables it on `G_IS_STANDALONE`, and `platform/wrapper.js:101` returns
+  `false` for `getSupportsFullscreen()` in the browser — only the Electron wrapper implements it. Browser
+  play uses F11. Wiring the real browser Fullscreen API is a plausible small Stage 5 UI/UX item.
+- **The standalone build writes to the same directory as a Steam-installed shapez.io.**
+  `electron/index.js:26-27` hardcodes the literal string `"shapez.io"`: `%APPDATA%\shapez.io\saves` and
+  `%APPDATA%\shapez.io\mods`. It is not derived from the electron app name. Two consequences: a Foundry
+  standalone build would load any mods installed for Steam shapez (silently defeating a "no mods"
+  requirement), and it writes into the same savegame directory. Whether it can actually corrupt a Steam
+  save index was **not** investigated. Authoring work that must be mod-free should use the web dev build,
+  whose storage is IndexedDB `app_storage` (`storage_indexed_db.js:28`) scoped to the localhost origin.
+- **Rendering cost has a base-size term independent of the camera, but it is smaller than #1471's belt count
+  suggests.** `systems/belt.js:331` (`drawBeltItems`) iterates *every* belt path each frame regardless of
+  viewport; each `BeltPath.draw` (`belt_path.js:1402`) then early-outs on
+  `parameters.visibleRect.containsRect(this.worldBounds)`. `containsRect` (`core/rectangle.js:233`) is
+  misnamed — it is an *intersects* test, not containment, so the cull is correct and there is no
+  vanishing-items bug there. But contiguous belts merge into one path, so 77k belts is likely only a few
+  thousand paths, i.e. a few thousand cheap rect checks — not a 250ms frame. **Hypothesis, not measured:**
+  the dominant cost is per-system, per-visible-chunk drawing, which makes on-screen *density* matter more
+  than total base size. Artifact 3 is what settles this; do not encode it as fact until it does.
+- **Per-entity drawing stops below zoom 0.9.** `config.js:75` sets `mapChunkOverviewMinZoom: 0.9`, and the
+  zoom range is 0.1–3 (`config.js:117-118`). Below 0.9 the renderer switches to cheap chunk-overview
+  drawing, so zooming out does *not* monotonically increase drawn entities. The worst case for the diagnosed
+  bottleneck sits just above 0.9. Any pinned benchmark camera must account for this.
 
 ## Current state
 
@@ -274,6 +331,11 @@ CI-wiring work: `mod_interface.js`'s `afterPrams`/`extendsPrams` typedefs used a
 did — previously this set `NaN%` as the boot progress bar's width. Everything else is compile-time only;
 JSDoc types are stripped before the real bundle ships.
 
+**Nothing in `src/`, `test/`, or CI changed on 2026-08-14.** That session was design work plus getting a
+local dev server running for fixture authoring. It left two untracked files, `.claude/dev-server.cmd` and
+`.claude/launch.json` (see Empirical constraints), and one uncommitted patch inside `gulp/node_modules`.
+`master` is otherwise where the 2026-08-13 session left it.
+
 Remaining, using phase-1.md's numbering: **(2) draw-call recording, (3) perf benchmark.** Artifacts 1
 (golden-save simulation hash) and 4 (boot smoke test) are both done, landed, and enforced in CI. 2 and 3 are
 not yet specced; both are expected to reuse `test/browser/harness.js`, per the design spec below, but each
@@ -310,15 +372,34 @@ determinism controls and the committed fixture (Task 5), the golden-save hash te
 confirmation plus this doc/roadmap update (Task 7) — landing Stage 0 artifact 1. Both are complete and
 enforced in CI.
 
-**Next: spec artifact 2 (draw-call recording) or artifact 3 (perf benchmark), per
-[docs/roadmap/phase-1.md](roadmap/phase-1.md)'s Stage 0 section.** Both are expected to reuse
-`test/browser/harness.js` — `launchGame`, `waitForMainMenu`, `loadFixtureGame`, `runTicks`, and the
-determinism controls are all already generic, not golden-save-specific — but neither has a design spec yet,
-unlike artifact 1's (superseded once, then rewritten around the browser harness; see "Current state" above).
-Write that spec before writing test code, per the standing pattern this stage has used twice now.
+**Next: spec Stage 0 artifact 3 (perf benchmark).** Artifact 2 (draw-call recording) follows it — the
+ordering is a standing decision above, and its reasoning (baseline expiry at Stage 1) should not be
+re-litigated. Both reuse `test/browser/harness.js`; `launchGame`, `waitForMainMenu`, `loadFixtureGame`,
+`runTicks`, and the determinism controls are already generic rather than golden-save-specific. Neither has a
+design spec yet. Write the spec before writing test code, per the standing pattern this stage has used twice.
 
-A few things worth carrying into that spec regardless of which artifact comes first, learned the hard way on
-Branch B and unlikely to be specific to golden-save hashing:
+**Artifact 3 is currently blocked on a fixture that only the repo owner can produce.** As of 2026-08-14 they
+are hand-playing a base to roughly level 25 in a Foundry **web** dev build (`.claude/dev-server.cmd`, then
+`http://localhost:3005`), unmodded, to be exported via the main menu's download button. Nothing about the
+spec needs to wait on it — but these questions cannot be answered without it, and should be treated as open
+rather than guessed:
+
+- **How large is large enough.** phase-1.md cites #1471's ~77k belts / ~43k buildings as the target profile.
+  A hand-played level-25 base will be far smaller. Whether that is sufficient is an empirical question; if
+  the numbers turn out too quiet to read, the base can be bulked up by blueprint-stamping existing chunks
+  rather than by more play. Decide *after* a first measurement, not before.
+- **Where the camera goes.** phase-1.md already requires a fixed save *and camera position*. Given the
+  zoom-0.9 overview cutoff above, the camera is arguably a bigger lever on the number than the save is. One
+  save with two or three pinned camera positions (dense view, wide view, near-empty control) gets more
+  signal than one position, and costs nothing extra once the save exists.
+- **Where the number is allowed to live.** CI runners have no GPU, so `browser-test` numbers will resemble
+  neither this dev machine nor a Steam install and are only comparable to other CI runs. That is adequate
+  for "did this get worse," which is what phase-1.md asks for (a tracked number, not a pass/fail assertion),
+  but it means CI cannot answer "is the game fast." Decide deliberately whether the benchmark runs per-push
+  at all, given `browser-test` is already at 2m55s.
+
+A few things worth carrying into that spec, learned the hard way on Branch B and unlikely to be specific to
+golden-save hashing:
 
 - **A committed reference value is never regenerated to make CI green.** If a number moves, that is the
   finding, not an obstacle. `dump_state.js` is the precedent for a script that says *what* moved rather than
@@ -332,6 +413,18 @@ Branch B and unlikely to be specific to golden-save hashing:
 
 ## Open questions
 
+- **Should the hardcoded `"shapez.io"` appdata path be renamed?** `electron/index.js:26-27` (see Empirical
+  constraints). A fork with its own identity writing into a shipping game's save and mod directories is a
+  real hazard, but renaming orphans any existing standalone saves, so it is a decision rather than a fix.
+  Arguably Stage 4 territory — product identity is content, not engine. Not folded into any current spec.
+- **Should the demo branding be replaced with Foundry branding?** `utils.js:772`, `src/html/index.html:4`.
+  Purely cosmetic and currently misleading (the dev build is not restricted). Small, but it is branding
+  work with no dependency on any stage, so it can happen whenever it stops being ignorable.
+- **Should the `NODE_OPTIONS` flag and the fluent-ffmpeg patch be made permanent rather than reapplied?**
+  Options include pinning an older local ffmpeg, a postinstall patch step, or setting webpack's
+  `output.hashFunction` so the openssl flag stops being needed. All three are properly Stage 1 concerns —
+  the bundler swap deletes the openssl problem outright — so the current manual workarounds are deliberate,
+  not neglect.
 - **Should `browser-test` skip docs-only pushes?** It has no path filter, so every push to a PR branch runs
   the full atlas + webpack build — measured at 2m46s and 2m55s on this branch for two commits that touched
   nothing but `docs/**`. Harmless for one-off doc commits; it compounds badly for a session making many small
