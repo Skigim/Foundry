@@ -227,7 +227,10 @@ Learned by running code, not by assuming. Each one has already cost time once.
   with `error:0308010C:digital envelope routines::unsupported`. The failure is easy to misread: gulp's
   earlier tasks all succeed and browser-sync starts serving, so `http://localhost:3005` answers normally and
   only `bundle.js` 404s. **Fix in place:** `.claude/dev-server.cmd` sets the variable in a real script file
-  and runs `yarn gulp`; `.claude/launch.json` points at it. Both are untracked as of this writing.
+  and runs `yarn gulp`; `.claude/launch.json` points at it. Both are committed, **force-added past
+  `.gitignore:60`'s `.claude/` rule** — so `git add .` will never pick up changes to them, and editing them
+  needs `git add -f`. `.claude/settings.local.json` is personal machine config and stays ignored. All of
+  this becomes moot at Stage 1: swapping webpack 4 removes the openssl flag's reason to exist.
 - **The dev web build is not demo-limited, despite saying "DEMO" everywhere.** Measured at runtime against
   the running game, not inferred: `isLimitedVersion()` is `false`, and `getHasExtendedLevelsAndFreeplay`,
   `getHasExtendedUpgrades`, `getHasUnlimitedSavegames`, and `getHasExtendedSettings` are all `true`.
@@ -332,8 +335,8 @@ did — previously this set `NaN%` as the boot progress bar's width. Everything 
 JSDoc types are stripped before the real bundle ships.
 
 **Nothing in `src/`, `test/`, or CI changed on 2026-08-14.** That session was design work plus getting a
-local dev server running for fixture authoring. It left two untracked files, `.claude/dev-server.cmd` and
-`.claude/launch.json` (see Empirical constraints), and one uncommitted patch inside `gulp/node_modules`.
+local dev server running for fixture authoring. It added `.claude/dev-server.cmd` and `.claude/launch.json`
+(see Empirical constraints) and one patch inside `gulp/node_modules` that git cannot track at all.
 `master` is otherwise where the 2026-08-13 session left it.
 
 Remaining, using phase-1.md's numbering: **(2) draw-call recording, (3) perf benchmark.** Artifacts 1
