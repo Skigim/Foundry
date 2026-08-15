@@ -78,7 +78,7 @@ stage. `git log --first-parent` gives the flat one-line-per-unit view when that'
 **Plain JS + JSDoc, typechecked like TypeScript.** There are no `.ts` files in `src/`; types come from
 JSDoc comments and are checked via `tsc --checkJs` against `src/js/tsconfig.json`. Files frequently have
 `/* typehints:start */ ... /* typehints:end */` blocks holding type-only imports — these are stripped from
-the actual webpack bundle by a custom loader (`gulp/loader.strip_block.js`) so they cost nothing at runtime.
+the actual bundle by the `webpack-strip-block` loader so they cost nothing at runtime.
 
 **`GameRoot` (`src/js/game/root.js`) is the central object** for a running game — it's constructed once per
 session and passed into almost every game class instead of using globals. It owns the entity manager, game

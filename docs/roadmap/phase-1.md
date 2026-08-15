@@ -134,7 +134,7 @@ bundler" as "replace gulp" will stall this stage.
 
 **Highest-risk items** (all bundle-level, which is why Stage 0's smoke test exists): `DefinePlugin`
 constants (`G_IS_STANDALONE` and friends — see CLAUDE.md's footgun note), the `typehints` strip-block
-loader (`gulp/loader.strip_block.js`), worker loading (`src/js/webworkers/`), and asset/atlas resolution.
+loader (npm `webpack-strip-block`), worker loading (`src/js/webworkers/`), and asset/atlas resolution.
 
 **CE note:** CE replaced Webpack with Rspack in
 [PR #119](https://github.com/tobspr-games/shapez-community-edition/pull/119) — release builds ~10s → ~1s,

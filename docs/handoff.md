@@ -79,7 +79,7 @@ Learned by running code, not by assuming. Each one has already cost time once.
   behavior, not standard Node ESM, which requires the extension. This is the real blocker for any test that
   needs more than a leaf module; the `require.context` constraint below is a real but much smaller piece of
   the same underlying fact.
-- **`/* typehints:start/end */` blocks are stripped by webpack only** (`gulp/loader.strip_block.js`); under
+- **`/* typehints:start/end */` blocks are stripped by the bundler only** (via the `webpack-strip-block` loader); under
   plain Node they are live, real imports. E.g. `game/core.js`'s typehints block imports `Application`,
   dragging in the entire app/platform graph the moment `core.js` is imported outside a webpack build.
 - **Several modules do real, module-scope `require()` calls for generated files that don't exist in a fresh
