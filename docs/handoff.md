@@ -38,14 +38,26 @@ Settled. Do not re-litigate without new evidence.
 - **Feature branches merge with `--no-ff`** for the atomic-revert hatch. Single-commit branches
   fast-forward. Every commit on a branch must be green on its own.
 - **Work in very small, individually verifiable commits.**
-- **Stage 0 artifact 3 (perf benchmark) is specced and built before artifact 2 (draw-call recording).**
-  Artifact 3's pre-Stage-1 baseline number can only be taken while the current webpack build still exists;
-  once Stage 1 swaps the bundler, the "before" half of Phase 1's own performance claim is gone permanently.
-  Artifact 2 exists only for Stage 3 and has no equivalent expiry.
-- **Artifact 3's fixture is a real, hand-played savegame, not a generated one.** The bottleneck
-  ([shapez.io#1021](https://github.com/tobspr-games/shapez.io/issues/1021)) is per-system re-checking of
-  on-screen entities, so it scales with *entity variety* on screen, not raw count. A synthetic belt grid has
-  the count but not the mix. A save file is also inert — no generator code to maintain across Stages 1–4.
+- **~~Artifact 3 is specced and built before artifact 2.~~ REVISED 2026-08-14 — artifact 2 comes first, and
+  both are deferred into Stage 3.** The original reasoning was baseline expiry: artifact 3's pre-Stage-1
+  number can only be taken on the current webpack build, and Stage 1 destroys the "before" half of Phase 1's
+  performance claim. That reasoning assumed a **wall-clock** benchmark. Artifact 3's spec instead makes the
+  committed metric a set of **draw-call counters**, which are functions of the code and fixture rather than
+  the hardware or the bundler — so they have no Stage 1 expiry, and they cannot be built before artifact 2,
+  which is the instrumentation that produces them. What *does* still expire is the wall-clock number; see
+  "Pre-Stage-1 wall-clock baseline" under Current state, where a crude one is recorded so it is not lost.
+  Note also that Stage 3's own claim compares before/after the draw-loop rewrite, both post-Stage-1 and
+  therefore on the same bundler — that comparison was never at risk.
+- **~~Artifact 3's fixture is a real, hand-played savegame, not a generated one.~~ CONTESTED 2026-08-14 —
+  needs the repo owner's decision before artifact 3 is built.** The original argument stands on its merits:
+  the bottleneck scales with entity *variety* on screen, not raw count, and a save file is inert where a
+  generator is code to maintain across Stages 1–4. The new evidence against it is empirical. The hand-played
+  save was produced and measured (see Current state): **3,496 entities, ~3% of #1471's target profile on both
+  axes**, running 78fps at 1.19ms tick — far too quiet to read. Reaching ~120k entities by hand is not
+  realistic. Artifact 3's spec therefore assumes a *generated* fixture, and a generator can be given a
+  realistic building mix rather than a uniform belt grid, which answers the variety objection but not the
+  maintenance one. **Do not treat the spec as having settled this** — it is the first thing to resolve when
+  Stage 3 opens.
 - **The automated perf number is measured in the browser only; the desktop build is hand-checked.** The two
   differ (Electron 16 bundles Chromium 96, and its launch flags change GPU behavior — see
   `electron/package.json`), but the cost being optimized is JS, not GPU, so a win carries to both. Doubling
@@ -360,10 +372,32 @@ wires/filters/logic-gates rewards all present), plus `yarn lint` and `yarn tslin
 leftovers deliberately untouched: the page title still says "shapez Demo" and the main menu still shows a
 Steam sign-in link.
 
-Remaining, using phase-1.md's numbering: **(2) draw-call recording, (3) perf benchmark.** Artifacts 1
-(golden-save simulation hash) and 4 (boot smoke test) are both done, landed, and enforced in CI. 2 and 3 are
-not yet specced; both are expected to reuse `test/browser/harness.js`, per the design spec below, but each
-needs its own spec.
+**Artifacts 2 and 3 are deferred into Stage 3's prerequisites (decided 2026-08-14).** Artifacts 1
+(golden-save simulation hash) and 4 (boot smoke test) are done, landed, and enforced in CI — and they are the
+two that protect Stages 1 and 2. Artifacts 2 and 3 only ever served Stage 3, so building them now buys
+nothing. Stage 0's "Done when" in phase-1.md was rewritten to match, and Stage 3 now opens by building both.
+Deferred, not cancelled: Stage 3's correctness check *is* draw-call recording.
+
+Artifact 3 is specced —
+[docs/superpowers/specs/2026-08-14-stage0-perf-benchmark-design.md](superpowers/specs/2026-08-14-stage0-perf-benchmark-design.md).
+Artifact 2 is not. **Harness reuse is only partial**, correcting what this document previously said: both
+`prepareDeterministicRun` (which detaches the frame loop, `harness.js:413`) and `runTicks` (which steps
+`core.updateLogic()` only, never reaching `GameCore.draw()`, `harness.js:466`) are correct for a
+simulation hash and useless for a rendering benchmark. `launchGame` / `waitForMainMenu` / `loadFixtureGame`
+are reusable; the stepping path is not.
+
+**Pre-Stage-1 wall-clock baseline (2026-08-14).** Crude, hand-taken, and recorded here specifically because
+Stage 1 makes it unrepeatable. Current webpack 4 dev build, `web-localhost` variant, developer machine (not
+CI), on a hand-played save of 3,496 entities / 2,297 belts / 607 belt paths at level 15:
+
+| camera | fps | frame | tick |
+|---|---|---|---|
+| zoomed in (per-entity renderer) | 78 | 12.82 ms | 1.19 ms |
+| zoomed out (below the 0.9 overview cutoff) | 135 | 7.41 ms | 0.96 ms |
+
+Simulation is ~1 ms against a ~13 ms frame, so rendering already owns the frame at this scale — the shape
+#1021 describes, at a comfortable level. Exact `zoomLevel` values were not captured (the console truncated
+the object), so treat the two rows as "above and below the cutoff," not as pinned camera positions.
 
 **Stage 0's execution substrate is decided, and Branches A and B have both implemented on it.**
 [docs/superpowers/specs/2026-08-12-stage0-browser-harness-design.md](superpowers/specs/2026-08-12-stage0-browser-harness-design.md)
@@ -396,34 +430,22 @@ determinism controls and the committed fixture (Task 5), the golden-save hash te
 confirmation plus this doc/roadmap update (Task 7) — landing Stage 0 artifact 1. Both are complete and
 enforced in CI.
 
-**Next: spec Stage 0 artifact 3 (perf benchmark).** Artifact 2 (draw-call recording) follows it — the
-ordering is a standing decision above, and its reasoning (baseline expiry at Stage 1) should not be
-re-litigated. Both reuse `test/browser/harness.js`; `launchGame`, `waitForMainMenu`, `loadFixtureGame`,
-`runTicks`, and the determinism controls are already generic rather than golden-save-specific. Neither has a
-design spec yet. Write the spec before writing test code, per the standing pattern this stage has used twice.
+**Stage 0 is closed.** Its exit criteria were rewritten on 2026-08-14 to cover artifacts 1 and 4 plus the
+determinism claim, all met; artifacts 2 and 3 moved into Stage 3's prerequisites. The fixture-gathering task
+that used to sit here — hand-playing a base for artifact 3 — was completed, measured, and found ~3% of the
+scale needed. See Current state; the save itself is not the bottleneck the roadmap thought it was.
 
-**Artifact 3 is currently blocked on a fixture that only the repo owner can produce.** As of 2026-08-14 they
-are hand-playing a base to roughly level 25 in a Foundry **web** dev build (`.claude/dev-server.cmd`, then
-`http://localhost:3005`), unmodded, to be exported via the main menu's download button. Nothing about the
-spec needs to wait on it — but these questions cannot be answered without it, and should be treated as open
-rather than guessed:
+**Next: Stage 1 (build tooling).** Specced at
+[docs/superpowers/specs/2026-08-14-stage1-build-tooling-design.md](superpowers/specs/2026-08-14-stage1-build-tooling-design.md).
+No code written yet. Artifacts 1 and 4 exist precisely to guard this stage, and both are green — this is the
+first stage that gets to use the safety net rather than build it.
 
-- **How large is large enough.** phase-1.md cites #1471's ~77k belts / ~43k buildings as the target profile.
-  A hand-played level-25 base will be far smaller. Whether that is sufficient is an empirical question; if
-  the numbers turn out too quiet to read, the base can be bulked up by blueprint-stamping existing chunks
-  rather than by more play. Decide *after* a first measurement, not before.
-- **Where the camera goes.** phase-1.md already requires a fixed save *and camera position*. Given the
-  zoom-0.9 overview cutoff above, the camera is arguably a bigger lever on the number than the save is. One
-  save with two or three pinned camera positions (dense view, wide view, near-empty control) gets more
-  signal than one position, and costs nothing extra once the save exists.
-- **Where the number is allowed to live.** CI runners have no GPU, so `browser-test` numbers will resemble
-  neither this dev machine nor a Steam install and are only comparable to other CI runs. That is adequate
-  for "did this get worse," which is what phase-1.md asks for (a tracked number, not a pass/fail assertion),
-  but it means CI cannot answer "is the game fast." Decide deliberately whether the benchmark runs per-push
-  at all, given `browser-test` is already at 2m55s.
+Two questions the spec leaves open deliberately, both needing a decision early rather than mid-migration:
+whether the two yarn trees collapse in this stage or a follow-up, and what replaces the unmaintained
+webpack-only plugins in the production config. Read the spec before touching any build file.
 
-A few things worth carrying into that spec, learned the hard way on Branch B and unlikely to be specific to
-golden-save hashing:
+A few things worth carrying into any new artifact's spec, learned the hard way on Branch B and unlikely to be
+specific to golden-save hashing:
 
 - **A committed reference value is never regenerated to make CI green.** If a number moves, that is the
   finding, not an obstacle. `dump_state.js` is the precedent for a script that says *what* moved rather than
