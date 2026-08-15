@@ -18,6 +18,12 @@ Record the bundler, the machine, and the date every time.
 | date | bundler | machine | cold dev | incremental dev | cold prod |
 |---|---|---|---|---|---|
 | 2026-08-15 | webpack 4.43 | Windows 11 Home, AMD Ryzen 5 3600 (6-Core), Node v22.17.0 | 8.76s | 980ms | 63.26s |
+| 2026-08-15 | rspack 2.1.10 | Windows 11 Home, AMD Ryzen 5 3600 (6-Core), Node v22.17.0 | 4.88s | 67ms | 29.41s |
+
+### Verdict
+
+The Rspack swap delivers substantial speedups across all three metrics on the same hardware: cold dev bundle improved by **1.80x** (8.76s -> 4.88s), cold production bundle improved by **2.15x** (63.26s -> 29.41s), and incremental dev watch rebuilds improved by **14.6x** (980ms -> 67ms). The incremental rebuild time of ~67ms decisively meets and exceeds the Phase 1 Stage 1 "Done when" bar of sub-second incremental rebuilds (comfortably beating Community Edition's reported ~250ms baseline).
+
 
 ## Build variant sweep
 
