@@ -145,9 +145,31 @@ jobs:
               run: |
                   test -f test/browser/boot.smoke.test.js
                   test -f test/browser/golden_save.test.js
+                  test -f test/browser/prod/boot.prod.smoke.test.js
 
             - name: Run browser tests
               run: yarn test:browser
+
+            # The prod bundle is where Stage 1's risk lives: three strip-block
+            # passes, a minifier, babel, and a blob:-URL script load. Built after
+            # the dev tests so both flavors get exercised from one asset build -
+            # this overwrites build/bundle.js and build/index.html on purpose.
+            - name: Build prod bundle
+              working-directory: gulp
+              env:
+                  NODE_OPTIONS: --openssl-legacy-provider
+              run: |
+                  yarn gulp js.web-shapezio.prod
+                  yarn gulp html.web-shapezio.prod
+
+            - name: Verify the prod bundle actually built
+              run: |
+                  test -f build/index.html
+                  test -f build/bundle.js
+                  grep -q "/v/" build/index.html
+
+            - name: Run prod browser tests
+              run: yarn test:browser:prod
 
     yaml-lint:
         name: yaml-lint

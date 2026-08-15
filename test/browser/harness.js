@@ -26,11 +26,22 @@ export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", 
 export const BUILD_DIR = join(REPO_ROOT, "build");
 export const ATLAS_DIR = join(REPO_ROOT, "res_built", "atlas");
 
-const BUILD_COMMAND = [
+const BUILD_COMMAND_DEV = [
     "cd gulp",
     "NODE_OPTIONS=--openssl-legacy-provider yarn gulp build.prepare.dev",
     "NODE_OPTIONS=--openssl-legacy-provider yarn gulp js.web-localhost.dev",
     "NODE_OPTIONS=--openssl-legacy-provider yarn gulp html.web-localhost.dev",
+].join(" && ");
+
+// Reuses build.prepare.dev's assets deliberately: this stage replaces the JS
+// bundler, so the prod smoke test covers the prod JS bundle, not the prod CSS
+// or image pipelines. Run build.prepare.dev once, then this - it does not
+// re-clean build/.
+const BUILD_COMMAND_PROD = [
+    "cd gulp",
+    "NODE_OPTIONS=--openssl-legacy-provider yarn gulp build.prepare.dev",
+    "NODE_OPTIONS=--openssl-legacy-provider yarn gulp js.web-shapezio.prod",
+    "NODE_OPTIONS=--openssl-legacy-provider yarn gulp html.web-shapezio.prod",
 ].join(" && ");
 
 const MIME_TYPES = {
@@ -49,13 +60,17 @@ const MIME_TYPES = {
 };
 
 /**
- * Fails loudly if there is no usable dev build to test against.
+ * Fails loudly if there is no usable build to test against.
+ * @param {{ flavor?: "dev" | "prod" }} [options]
  * @returns {void}
  */
-export function assertBuildPresent() {
+export function assertBuildPresent(options = {}) {
+    const { flavor = "dev" } = options;
+    const command = flavor === "prod" ? BUILD_COMMAND_PROD : BUILD_COMMAND_DEV;
+
     for (const file of ["index.html", "bundle.js", "main.css"]) {
         if (!existsSync(join(BUILD_DIR, file))) {
-            throw new Error(`Missing build/${file}. Build the dev bundle first:\n  ${BUILD_COMMAND}`);
+            throw new Error(`Missing build/${file}. Build the ${flavor} bundle first:\n  ${command}`);
         }
     }
 
@@ -82,7 +97,14 @@ export function assertBuildPresent() {
  */
 export function startStaticServer(rootDir = BUILD_DIR) {
     const server = createServer((req, res) => {
-        const pathname = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
+        // gulp/html.js cachebusts prod asset URLs to /v/<commitHash>/<path>
+        // (buildutils.js:44-46); the real deploy strips that prefix at the
+        // server. Dev builds never emit it, so stripping unconditionally is
+        // safe and keeps one server serving both flavors.
+        const pathname = decodeURIComponent(new URL(req.url, "http://localhost").pathname).replace(
+            /^\/v\/[^/]+\//,
+            "/"
+        );
         const filePath = join(rootDir, pathname === "/" ? "index.html" : pathname);
 
         if (!filePath.startsWith(rootDir)) {
@@ -129,13 +151,13 @@ export function startStaticServer(rootDir = BUILD_DIR) {
 /**
  * Serves and opens the dev bundle. Returns as soon as navigation starts; use
  * waitForMainMenu to wait for boot.
- * @param {{ allowExternalRequests?: boolean, headless?: boolean }} [options]
+ * @param {{ allowExternalRequests?: boolean, headless?: boolean, flavor?: "dev" | "prod" }} [options]
  * @returns {Promise<GameSession>}
  */
 export async function launchGame(options = {}) {
-    const { allowExternalRequests = false, headless = true } = options;
+    const { allowExternalRequests = false, headless = true, flavor = "dev" } = options;
 
-    assertBuildPresent();
+    assertBuildPresent({ flavor });
 
     const server = await startStaticServer();
     const browser = await chromium.launch({ headless });
@@ -180,12 +202,14 @@ export async function launchGame(options = {}) {
 /**
  * Waits for the state manager to have entered MainMenuState. It sets
  * document.body.id = "state_" + key (core/state_manager.js:88), which is a
- * state-machine fact rather than a rendering timing guess.
+ * state-machine fact rather than a rendering timing guess - and which holds on
+ * a prod bundle too, where window.shapez does not exist.
  * @param {import("playwright").Page} page
- * @param {number} [timeoutMs]
+ * @param {{ timeoutMs?: number, expectDevGlobals?: boolean }} [options]
  * @returns {Promise<void>}
  */
-export async function waitForMainMenu(page, timeoutMs = 90000) {
+export async function waitForMainMenu(page, options = {}) {
+    const { timeoutMs = 90000, expectDevGlobals = true } = options;
     try {
         await page.waitForFunction(() => document.body.id === "state_MainMenuState", null, {
             timeout: timeoutMs,
@@ -195,22 +219,15 @@ export async function waitForMainMenu(page, timeoutMs = 90000) {
         // the main menu) with a misleading preloader-status message, so check
         // for them before falling back to that message alone.
         const diagnosis = await page
-            .evaluate(() => {
-                // window.shapez only exists on a dev build (exposeExports() is
-                // gated on G_IS_DEV || G_IS_STANDALONE - see modloader.js). A
-                // prod bundle would otherwise surface as an opaque TypeError
-                // deep inside a later page.evaluate() instead of here.
+            .evaluate(expectDev => {
                 if (!window.shapez) {
-                    return "window.shapez is undefined - this looks like a prod build, not a dev build.";
+                    // On a prod bundle this is expected, not a diagnosis:
+                    // exposeExports() is gated on G_IS_DEV || G_IS_STANDALONE
+                    // (modloader.js:111).
+                    return expectDev
+                        ? "window.shapez is undefined - this looks like a prod build, not a dev build."
+                        : null;
                 }
-
-                // fastGameEnter routes straight into InGameState, so
-                // document.body.id never becomes state_MainMenuState.
-                // noArtificialDelays can produce the same symptom by
-                // collapsing menu transition timings. Both are standard,
-                // commonly-set local-dev convenience flags from the
-                // gitignored config.local.js (see config.local.template.js),
-                // not a real boot failure.
                 const debug = window.shapez.globalConfig.debug;
                 const offenders = ["fastGameEnter", "noArtificialDelays"].filter(flag => debug[flag]);
                 if (offenders.length > 0) {
@@ -220,9 +237,8 @@ export async function waitForMainMenu(page, timeoutMs = 90000) {
                         "is why the main menu was never reached, not a preloader/atlas problem."
                     );
                 }
-
                 return null;
-            })
+            }, expectDevGlobals)
             .catch(() => "(could not inspect window.shapez to diagnose further)");
 
         // PreloadState hangs rather than throwing when resource loading fails, so
