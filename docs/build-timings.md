@@ -18,3 +18,21 @@ Record the bundler, the machine, and the date every time.
 | date | bundler | machine | cold dev | incremental dev | cold prod |
 |---|---|---|---|---|---|
 | 2026-08-15 | webpack 4.43 | Windows 11 Home, AMD Ryzen 5 3600 (6-Core), Node v22.17.0 | 8.76s | 980ms | 63.26s |
+
+## Build variant sweep
+
+Recorded after the Rspack swap. "builds" is the bar for the variants that are never exercised; the two
+marked "booted" were launched and played briefly.
+
+| variant | result | notes |
+|---|---|---|
+| web-localhost | builds | Dev and prod compile cleanly; automated dev browser tests pass |
+| web-shapezio-beta | builds | Compiles cleanly |
+| web-shapezio | booted | Verified via yarn test:browser:prod (boot smoke test green) |
+| standalone-steam | builds | Packaged cleanly via build.standalone-steam |
+| standalone-steam-china | builds | Compiles cleanly |
+| standalone-steam-demo | builds | Compiles cleanly |
+| standalone-steam-china-demo | builds | Compiles cleanly |
+| standalone-wegame | builds | Compiles cleanly |
+| standalone-gog | builds | Compiles cleanly |
+
