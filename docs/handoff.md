@@ -479,6 +479,12 @@ specific to golden-save hashing:
   alone is fine, but anything broader risks skipping the build on a push that genuinely needs it, and a
   required-check configuration will treat a skipped job differently from a passing one. Decide deliberately;
   do not bundle it into a task.
+- **The circular-import guard was dropped in the Rspack swap and has no replacement.**
+  `gulp/webpack.config.js` ran `circular-dependency-plugin` with `failOnError: true`, so a new import
+  cycle in `src/js` failed the dev build. The plugin hooks `compilation.hooks.optimizeModules`, which
+  Rspack does not implement, so it did not survive Stage 1. Nothing currently detects a new cycle.
+  Options: an Rspack-native equivalent if one exists, `madge --circular src/js` as a CI step, or accept
+  the gap. Deliberately not bundled into the bundler swap.
 - Whether to bump the deprecated action versions (see Empirical constraints) as a standalone change.
 - Local branches `phase-1/stage-0-harness`, `phase-1/stage-0-ci`, and `phase-1/stage-0-tslint-fix` were
   deleted (confirmed merged) in Task 7. `phase-1/stage-0-boot-smoke` and `phase-1/stage-0-golden-hash` — the

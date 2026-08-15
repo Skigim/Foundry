@@ -1,8 +1,9 @@
 // @ts-nocheck
 
 const path = require("path");
-const webpack = require("webpack");
+const rspack = require("@rspack/core");
 const { getRevision, getVersion, getAllResourceImages } = require("./buildutils");
+
 const TerserPlugin = require("terser-webpack-plugin");
 
 module.exports = ({
@@ -45,36 +46,33 @@ module.exports = ({
         entry: {
             "bundle.js": [path.resolve(__dirname, "..", "src", "js", "main.js")],
         },
-        node: {
-            fs: "empty",
-        },
         output: {
             filename: "bundle.js",
             path: path.resolve(__dirname, "..", "build"),
+            // See the dev config: the preloader loads bundle.js from a blob: URL,
+            // so worker chunk URLs cannot be auto-detected. Web prod additionally
+            // cachebusts every asset to /v/<commitHash>/ (gulp/html.js via
+            // buildutils.cachebust), so the worker chunk must be requested from
+            // the same prefix.
+            publicPath: standalone ? "" : "/v/" + getRevision() + "/",
         },
         context: path.resolve(__dirname, ".."),
-        stats: {
-            // Examine all modules
-            maxModules: Infinity,
-            // Display bailout reasons
-            optimizationBailout: true,
-        },
         devtool: false,
         resolve: {
             alias: {
                 "global-compression": path.resolve(__dirname, "..", "src", "js", "core", "lzstring.js"),
             },
+            fallback: {
+                fs: false,
+                crypto: false,
+            },
         },
         optimization: {
             minimize: true,
-            // namedModules: true,
-
-            noEmitOnErrors: true,
+            emitOnErrors: false,
             removeAvailableModules: true,
             removeEmptyChunks: true,
             mergeDuplicateChunks: true,
-            flagIncludedChunks: true,
-            occurrenceOrder: true,
             providedExports: true,
             usedExports: true,
             concatenateModules: true,
@@ -83,8 +81,6 @@ module.exports = ({
             minimizer: [
                 new TerserPlugin({
                     parallel: true,
-                    sourceMap: false,
-                    cache: false,
                     terserOptions: {
                         ecma: es6 ? 6 : 5,
                         parse: {},
@@ -92,7 +88,6 @@ module.exports = ({
                         toplevel: true,
                         keep_classnames: !minifyNames,
                         keep_fnames: !minifyNames,
-                        keep_fargs: !minifyNames,
                         safari10: true,
                         compress: {
                             arguments: false, // breaks
@@ -123,7 +118,6 @@ module.exports = ({
                             toplevel: true,
                             unsafe_math: true,
                             unsafe_arrows: false,
-                            warnings: true,
                         },
                         mangle: {
                             reserved: ["__$S__"],
@@ -134,14 +128,14 @@ module.exports = ({
                             toplevel: true,
                             safari10: true,
                         },
-                        output: {
+                        format: {
                             comments: false,
                             ascii_only: true,
                             beautify: false,
                             braces: false,
                             ecma: es6 ? 6 : 5,
                             preamble:
-                                "/* shapez.io Codebase - Copyright 2022 tobspr Games - " +
+                                "/* Foundry (shapez.io fork) - " +
                                 getVersion() +
                                 " @ " +
                                 getRevision() +
@@ -151,17 +145,13 @@ module.exports = ({
                 }),
             ],
         },
-        performance: {
-            maxEntrypointSize: 5120000,
-            maxAssetSize: 5120000,
-        },
-        plugins: [new webpack.DefinePlugin(globalDefs)],
+        plugins: [new rspack.DefinePlugin(globalDefs)],
         module: {
             rules: [
                 {
                     test: /\.json$/,
                     enforce: "pre",
-                    use: ["./gulp/loader.compressjson"],
+                    use: [path.resolve(__dirname, "loader.compressjson.js")],
                     type: "javascript/auto",
                 },
                 { test: /\.(png|jpe?g|svg)$/, loader: "ignore-loader" },
@@ -173,31 +163,21 @@ module.exports = ({
                     use: [
                         {
                             loader: "webpack-strip-block",
-                            options: {
-                                start: "typehints:start",
-                                end: "typehints:end",
-                            },
+                            options: { start: "typehints:start", end: "typehints:end" },
                         },
                         {
                             loader: "webpack-strip-block",
-                            options: {
-                                start: "dev:start",
-                                end: "dev:end",
-                            },
+                            options: { start: "dev:start", end: "dev:end" },
                         },
                         {
                             loader: "webpack-strip-block",
-                            options: {
-                                start: "wires:start",
-                                end: "wires:end",
-                            },
+                            options: { start: "wires:start", end: "wires:end" },
                         },
                     ],
                 },
                 {
                     test: /\.js$/,
                     use: [
-                        // "thread-loader",
                         {
                             loader: path.resolve(__dirname, "mod.js"),
                         },
@@ -209,28 +189,8 @@ module.exports = ({
                                 ),
                             },
                         },
-                        "uglify-template-string-loader", // Finally found this plugin
+                        "uglify-template-string-loader",
                         path.resolve(__dirname, "loader.inline_globals.js"),
-                    ],
-                },
-                {
-                    test: /\.worker\.js$/,
-                    use: [
-                        {
-                            loader: "worker-loader",
-                            options: {
-                                fallback: false,
-                                inline: true,
-                            },
-                        },
-                        {
-                            loader: "babel-loader?cacheDirectory",
-                            options: {
-                                configFile: require.resolve(
-                                    es6 ? "./babel-es6.config.js" : "./babel.config.js"
-                                ),
-                            },
-                        },
                     ],
                 },
                 {
@@ -239,7 +199,7 @@ module.exports = ({
                 },
                 {
                     test: /\.ya?ml$/,
-                    type: "json", // Required by Webpack v4
+                    type: "json",
                     use: "yaml-loader",
                 },
             ],

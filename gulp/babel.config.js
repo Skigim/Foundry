@@ -43,7 +43,9 @@ module.exports = function (api) {
         highlightCode: true,
         sourceType: "unambiguous",
         sourceMaps: false,
-        parserOpts: {},
+        parserOpts: {
+            plugins: ["importMeta"],
+        },
         exclude: /(core-js|babel-core|babel-runtime)/,
         generatorOpts: {
             retainLines: false,

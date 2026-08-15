@@ -111,7 +111,7 @@ export class ModLoader {
 
         if (G_IS_DEV || G_IS_STANDALONE) {
             let exports = {};
-            const modules = require.context("../", true, /\.js$/);
+            const modules = require.context("../", true, /^(?!.*\.worker\.js$).*\.js$/);
             Array.from(modules.keys()).forEach(key => {
                 // @ts-ignore
                 const module = modules(key);

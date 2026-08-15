@@ -15,6 +15,7 @@
         "@babel/plugin-transform-block-scoping": "^7.4.4",
         "@babel/plugin-transform-classes": "^7.5.5",
         "@babel/preset-env": "^7.5.4",
+        "@rspack/core": "^2.1.10",
         "@types/cordova": "^0.0.34",
         "@types/filesystem": "^0.0.29",
         "@types/node": "^12.7.5",
@@ -24,7 +25,6 @@
         "babel-core": "^6.26.3",
         "babel-loader": "^8.1.0",
         "browser-sync": "^2.26.10",
-        "circular-dependency-plugin": "^5.0.2",
         "circular-json": "^0.5.9",
         "clipboard-copy": "^3.1.0",
         "colors": "^1.3.3",
@@ -54,14 +54,11 @@
         "stream-browserify": "^3.0.0",
         "strictdom": "^1.0.1",
         "strip-indent": "^3.0.0",
-        "terser-webpack-plugin": "^1.1.0",
+        "terser-webpack-plugin": "^5",
         "through2": "^3.0.1",
         "uglify-template-string-loader": "^1.1.0",
-        "webpack": "^4.43.0",
-        "webpack-cli": "^3.1.0",
         "webpack-strip-block": "^0.2.0",
         "whatwg-fetch": "^3.0.0",
-        "worker-loader": "^2.0.0",
         "yaml": "^1.10.0"
     },
     "devDependencies": {
@@ -111,7 +108,6 @@
         "sass-unused": "^0.3.0",
         "strip-json-comments": "^3.0.1",
         "trim": "^0.0.1",
-        "webpack-stream": "^5.2.1",
         "yaml-loader": "^0.6.0"
     },
     "optionalDependencies": {

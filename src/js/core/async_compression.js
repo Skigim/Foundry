@@ -1,6 +1,3 @@
-// @ts-ignore
-import CompressionWorker from "../webworkers/compression.worker";
-
 import { createLogger } from "./logging";
 import { round2Digits } from "./utils";
 
@@ -37,7 +34,10 @@ if (!checkCryptPrefix(compressionPrefix)) {
 
 class AsynCompression {
     constructor() {
-        this.worker = new CompressionWorker();
+        // Rspack/webpack 5 recognise this exact literal form and emit the worker
+        // as its own chunk. The URL must be a literal - a variable defeats the
+        // static analysis and the worker silently does not get bundled.
+        this.worker = new Worker(new URL("../webworkers/compression.worker.js", import.meta.url));
 
         this.currentJobId = 1000;
 
