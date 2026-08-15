@@ -1,7 +1,6 @@
 /* typehints:start */
 import { Application } from "../../application";
 /* typehints:end */
-import { WEB_STEAM_SSO_AUTHENTICATED } from "../../core/steam_sso";
 import { enumHubGoalRewards } from "../tutorial_goals";
 
 export const finalGameShape = "RuCw--Cw:----Ru--";
@@ -365,12 +364,17 @@ const STANDALONE_LEVELS = () => [
 
 /**
  * Generates the level definitions
+ *
+ * Foundry divergence from upstream shapez.io: browser builds used to get
+ * WEB_DEMO_LEVELS — 9 levels ending in reward_demo_end — because the web build was
+ * the free half of a demo/Steam commercial split, and the full 26-level progression
+ * was reserved for the paid standalone. Foundry has no such split, so every build
+ * except the Steam demo gets the full progression. WEB_DEMO_LEVELS is kept below for
+ * reference; nothing routes to it.
  */
 export function generateLevelsForVariant(app) {
     if (G_IS_STEAM_DEMO) {
         return STEAM_DEMO_LEVELS();
-    } else if (G_IS_STANDALONE || WEB_STEAM_SSO_AUTHENTICATED) {
-        return STANDALONE_LEVELS();
     }
-    return WEB_DEMO_LEVELS(app);
+    return STANDALONE_LEVELS();
 }

@@ -239,6 +239,17 @@ Learned by running code, not by assuming. Each one has already cost time once.
   browser build not signed in via Steam SSO, `src/html/index.html:4` hardcodes the page title, and
   `main_menu.js:148`'s Steam sign-in panel is gated on SSO state, never on `isLimitedVersion()`. Do not spend
   time "unlocking" this again.
+- **...but the *level table* was a real, separate limiter, and this entry used to miss it.** The bullet above
+  is accurate about `RestrictionManager` and stops there — which reads as "nothing gates the dev build," and
+  that was wrong. `generateLevelsForVariant` (`modes/levels.js`) branched independently of
+  `isLimitedVersion()`: browser builds got `WEB_DEMO_LEVELS`, 9 levels ending in `reward_demo_end`, while the
+  full 26-level progression sat behind `G_IS_STANDALONE || WEB_STEAM_SSO_AUTHENTICATED`. Past level 9 you
+  fell into `computeNextGoal`'s freeplay branch (`hub_goals.js:255`), whose reward is `no_reward_freeplay` and
+  whose required amount is `Math.floor(4 + (level - 27) * 0.25)` — **≤ 0 until roughly level 27**, so every
+  delivered shape instantly completed a level. Presents as "the game fast-forwards me to level 15 and nothing
+  unlocks." Fixed 2026-08-14: all non-Steam-demo builds now get `STANDALONE_LEVELS`. The SSO path was never
+  usable locally anyway — it needs a live token from tobspr's API proving Steam ownership
+  (`core/steam_sso.js:56`).
 - **The in-game fullscreen toggle is standalone-only by design, not a demo restriction.**
   `application_settings.js:192` enables it on `G_IS_STANDALONE`, and `platform/wrapper.js:101` returns
   `false` for `getSupportsFullscreen()` in the browser — only the Electron wrapper implements it. Browser
@@ -334,10 +345,20 @@ CI-wiring work: `mod_interface.js`'s `afterPrams`/`extendsPrams` typedefs used a
 did — previously this set `NaN%` as the boot progress bar's width. Everything else is compile-time only;
 JSDoc types are stripped before the real bundle ships.
 
-**Nothing in `src/`, `test/`, or CI changed on 2026-08-14.** That session was design work plus getting a
-local dev server running for fixture authoring. It added `.claude/dev-server.cmd` and `.claude/launch.json`
-(see Empirical constraints) and one patch inside `gulp/node_modules` that git cannot track at all.
-`master` is otherwise where the 2026-08-13 session left it.
+**2026-08-14 was design work plus getting a local dev server running for fixture authoring.** It added
+`.claude/dev-server.cmd` and `.claude/launch.json` (see Empirical constraints) and one patch inside
+`gulp/node_modules` that git cannot track at all. No `test/` or CI changes.
+
+**The one `src/` change that day: `phase-1/full-level-progression-in-browser`.**
+`generateLevelsForVariant` (`modes/levels.js`) now routes every build except the Steam demo to
+`STANDALONE_LEVELS`, so browser builds get the full 26-level progression instead of the 9-level
+`WEB_DEMO_LEVELS` — see the level-table bullet under Empirical constraints for why that was load-bearing.
+This is a deliberate divergence from upstream, not a bug fix: the split was shapez.io's free-web-demo →
+paid-Steam funnel, and Foundry has no such split. `WEB_DEMO_LEVELS` is left in the file, unreferenced, with
+a comment saying so. Verified at runtime against the running game (26 levels, level 1 requiring 30 not 10,
+wires/filters/logic-gates rewards all present), plus `yarn lint` and `yarn tslint`. Cosmetic upstream
+leftovers deliberately untouched: the page title still says "shapez Demo" and the main menu still shows a
+Steam sign-in link.
 
 Remaining, using phase-1.md's numbering: **(2) draw-call recording, (3) perf benchmark.** Artifacts 1
 (golden-save simulation hash) and 4 (boot smoke test) are both done, landed, and enforced in CI. 2 and 3 are
