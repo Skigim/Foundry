@@ -51,8 +51,15 @@ Harness reuse is only partial — the existing stepping path renders nothing, so
 frame driver and depends on artifact 2 for the instrumentation it counts. The current fixture (a
 miner feeding a belt run) exercises mining, belt item movement, and belt-to-belt handoff; it does not yet
 cover item processors, splitters/mergers, storage, wires, or hub delivery/goal progression — a broader
-fixture remains a future addition, not yet required by the anti-bloat policy's premise below. **Done when**
-is not yet met: artifacts 2 (draw-call recording) and 3 (perf benchmark) remain outstanding.
+fixture remains a future addition, not yet required by the anti-bloat policy's premise below.
+
+**Artifacts 2 and 3 are deferred into Stage 3's prerequisites (decided 2026-08-14).** Both exist for Stage 3
+alone: artifact 2 catches draws vanishing or reordering when the draw loop is rewritten, artifact 3 shows the
+rewrite was worth doing. Artifacts 1 and 4 are what protect Stages 1 and 2, and they are already landed — so
+building 2 and 3 now buys nothing until Stage 3 starts, and artifact 3's spec establishes it cannot be built
+before artifact 2 in any case. **Deferred, not cancelled:** both are hard prerequisites of Stage 3, and
+Stage 3 must not start before they land. Rewriting the draw loop without artifact 2 means rewriting rendering
+with no way to tell what broke.
 
 **Anti-bloat policy (binding for all of Phase 1):**
 
@@ -106,8 +113,10 @@ that Windows run, matched exactly on `ubuntu-latest` in CI — see
 measured: a larger save, a different tick count, or a different platform pair could still diverge, and this
 note should be revisited if one ever does.
 
-**Done when:** all four artifacts run in CI, and the determinism claim is either confirmed or documented
-as not-yet-true with known causes.
+**Done when:** artifacts 1 and 4 run in CI, and the determinism claim is either confirmed or documented as
+not-yet-true with known causes. **Met 2026-08-14.** Artifacts 2 and 3 moved into Stage 3's prerequisites
+rather than this stage's exit criteria — see Status above for why, and do not read this as them being
+optional.
 
 ## Stage 1 — Build tooling
 
@@ -166,6 +175,12 @@ stricter settings than today.
 
 **Why here:** it touches every system's draw path, so it wants Stage 2's types; and it makes a performance
 claim, so it wants Stage 0's benchmark. This is Phase 1's first user-visible payoff.
+
+**This stage opens by building Stage 0's deferred artifacts.** Draw-call recording (artifact 2) and the perf
+benchmark (artifact 3) moved out of Stage 0 on 2026-08-14 and are this stage's first two tasks, in that order
+— artifact 3 depends on artifact 2 for its instrumentation. Artifact 3 is specced
+([design](../superpowers/specs/2026-08-14-stage0-perf-benchmark-design.md)); artifact 2 is not. Neither the
+"Done when" below nor the correctness claim above is reachable without them.
 
 **The change:** replace per-system entity iteration in the draw path with a centralized, layer-based draw
 loop. This is not a novel idea — it is the original author's own diagnosis in
