@@ -9,11 +9,9 @@ on:
         branches:
             - master
 
-# The playwright package downloads browsers on install. Only browser-test needs
-# them, and the `setup` job runs yarn on Node 16, which playwright's engines
-# field (>=18) rejects. browser-test installs Chromium explicitly instead, and
-# `setup`'s yarn install ignores the engines check below - it never imports
-# playwright itself, so the mismatch is harmless there.
+# The playwright package downloads browsers on install, and only browser-test
+# needs them. Every job runs Node 22, so playwright's engines field (>=18) is
+# satisfied everywhere and no --ignore-engines escape hatch is needed.
 env:
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
 
@@ -32,14 +30,14 @@ jobs:
             - name: Setup Node
               uses: actions/setup-node@v2-beta
               with:
-                  node-version: 16.x
+                  node-version: 22.x
 
             - name: Checkout repo
               uses: actions/checkout@v2
 
             - name: Install Yarn Dependencies
               run: |
-                  yarn --ignore-engines
+                  yarn
                   cd gulp/
                   yarn
                   cd ..
