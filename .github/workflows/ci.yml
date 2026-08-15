@@ -145,6 +145,7 @@ jobs:
               run: |
                   test -f test/browser/boot.smoke.test.js
                   test -f test/browser/golden_save.test.js
+                  test -f test/browser/worker.smoke.test.js
                   test -f test/browser/prod/boot.prod.smoke.test.js
 
             - name: Run browser tests
