@@ -27,6 +27,9 @@ module.exports = ({
                 crypto: false,
             },
         },
+        resolveLoader: {
+            modules: [path.resolve(__dirname, "node_modules"), "node_modules"],
+        },
         context: path.resolve(__dirname, ".."),
         plugins: [
             new rspack.DefinePlugin({

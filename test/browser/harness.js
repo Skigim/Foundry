@@ -28,9 +28,9 @@ export const ATLAS_DIR = join(REPO_ROOT, "res_built", "atlas");
 
 const BUILD_COMMAND_DEV = [
     "cd gulp",
-    "NODE_OPTIONS=--openssl-legacy-provider yarn gulp build.prepare.dev",
-    "NODE_OPTIONS=--openssl-legacy-provider yarn gulp js.web-localhost.dev",
-    "NODE_OPTIONS=--openssl-legacy-provider yarn gulp html.web-localhost.dev",
+    "yarn gulp build.prepare.dev",
+    "yarn gulp js.web-localhost.dev",
+    "yarn gulp html.web-localhost.dev",
 ].join(" && ");
 
 // Reuses build.prepare.dev's assets deliberately: this stage replaces the JS
@@ -39,9 +39,9 @@ const BUILD_COMMAND_DEV = [
 // re-clean build/.
 const BUILD_COMMAND_PROD = [
     "cd gulp",
-    "NODE_OPTIONS=--openssl-legacy-provider yarn gulp build.prepare.dev",
-    "NODE_OPTIONS=--openssl-legacy-provider yarn gulp js.web-shapezio.prod",
-    "NODE_OPTIONS=--openssl-legacy-provider yarn gulp html.web-shapezio.prod",
+    "yarn gulp build.prepare.dev",
+    "yarn gulp js.web-shapezio.prod",
+    "yarn gulp html.web-shapezio.prod",
 ].join(" && ");
 
 const MIME_TYPES = {

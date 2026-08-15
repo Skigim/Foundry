@@ -56,6 +56,9 @@ module.exports = ({
             // the same prefix.
             publicPath: standalone ? "" : "/v/" + getRevision() + "/",
         },
+        resolveLoader: {
+            modules: [path.resolve(__dirname, "node_modules"), "node_modules"],
+        },
         context: path.resolve(__dirname, ".."),
         devtool: false,
         resolve: {

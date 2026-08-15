@@ -100,9 +100,9 @@ Learned by running code, not by assuming. Each one has already cost time once.
   real `gulp/webpack.config.js`. Consequence: there is no "small bundle" of the simulation — bundling it
   requires the full asset pipeline (`res_built/atlas/`, `built-temp/sfx.json`). Cutting that edge is a
   Stage 4 target.
-- **Webpack 4 cannot run on Node 17+** without `NODE_OPTIONS=--openssl-legacy-provider`; it dies with
+- **~~Webpack 4 cannot run on Node 17+~~ RESOLVED 2026-08-14 by Stage 1.** ~~without `NODE_OPTIONS=--openssl-legacy-provider`; it dies with
   `error:0308010C:digital envelope routines::unsupported`. The `CI` job works only because it pins Node 16.
-  Local Node here is 22.
+  Local Node here is 22.~~ The Rspack bundler swap removed webpack 4, eliminating the OpenSSL legacy provider requirement.
 - **`imgres.buildAtlas` fails silently.** `gulp/image-resources.js:75-113` wraps the task in
   `try { ... } catch { console.warn(...) }` and then calls `cb()` — a *successful* callback. Missing Java or a
   failed 22MB jar download yields a "successful" build with no sprites. Still true, and still worth guarding
@@ -233,8 +233,8 @@ Learned by running code, not by assuming. Each one has already cost time once.
   `node:test` cases themselves run in ~5.3s combined; the rest is the atlas/bundle build and
   Playwright/Chromium setup already shared with artifact 4. Still comfortably under the design's 5–10 minute
   budget.
-- **`NODE_OPTIONS=--openssl-legacy-provider` must be exported before gulp starts, and cannot be reliably
-  threaded through a one-line `cmd /c "set X=... && ..."` invocation** from this environment — the quoting is
+- **~~`NODE_OPTIONS=--openssl-legacy-provider` must be exported before gulp starts, and cannot be reliably
+  threaded through a one-line `cmd /c "set X=... && ..."` invocation~~ RESOLVED 2026-08-14 by Stage 1.** ~~from this environment — the quoting is
   mangled between the bash layer and `cmd`, the flag silently never arrives, and webpack then dies mid-watch
   with `error:0308010C:digital envelope routines::unsupported`. The failure is easy to misread: gulp's
   earlier tasks all succeed and browser-sync starts serving, so `http://localhost:3005` answers normally and
@@ -242,7 +242,7 @@ Learned by running code, not by assuming. Each one has already cost time once.
   and runs `yarn gulp`; `.claude/launch.json` points at it. Both are committed, **force-added past
   `.gitignore:60`'s `.claude/` rule** — so `git add .` will never pick up changes to them, and editing them
   needs `git add -f`. `.claude/settings.local.json` is personal machine config and stays ignored. All of
-  this becomes moot at Stage 1: swapping webpack 4 removes the openssl flag's reason to exist.
+  this becomes moot at Stage 1: swapping webpack 4 removes the openssl flag's reason to exist.~~ Swapping webpack 4 for Rspack in Stage 1 completely removed the need for this flag.
 - **The dev web build is not demo-limited, despite saying "DEMO" everywhere.** Measured at runtime against
   the running game, not inferred: `isLimitedVersion()` is `false`, and `getHasExtendedLevelsAndFreeplay`,
   `getHasExtendedUpgrades`, `getHasUnlimitedSavegames`, and `getHasExtendedSettings` are all `true`.
@@ -466,11 +466,8 @@ specific to golden-save hashing:
 - **Should the demo branding be replaced with Foundry branding?** `utils.js:772`, `src/html/index.html:4`.
   Purely cosmetic and currently misleading (the dev build is not restricted). Small, but it is branding
   work with no dependency on any stage, so it can happen whenever it stops being ignorable.
-- **Should the `NODE_OPTIONS` flag and the fluent-ffmpeg patch be made permanent rather than reapplied?**
-  Options include pinning an older local ffmpeg, a postinstall patch step, or setting webpack's
-  `output.hashFunction` so the openssl flag stops being needed. All three are properly Stage 1 concerns —
-  the bundler swap deletes the openssl problem outright — so the current manual workarounds are deliberate,
-  not neglect.
+- **Should the fluent-ffmpeg patch be made permanent rather than reapplied?**
+  Options include pinning an older local ffmpeg or a postinstall patch step. The `NODE_OPTIONS` half of this question was resolved in Stage 1 by removing webpack 4.
 - **Should `browser-test` skip docs-only pushes?** It has no path filter, so every push to a PR branch runs
   the full atlas + webpack build — measured at 2m46s and 2m55s on this branch for two commits that touched
   nothing but `docs/**`. Harmless for one-off doc commits; it compounds badly for a session making many small
