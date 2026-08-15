@@ -45,7 +45,10 @@ detectable.
 bundle in a real browser via `test/browser/harness.js` and enforced by CI's `browser-test` job. The
 substrate is specified in
 [docs/superpowers/specs/2026-08-12-stage0-browser-harness-design.md](../superpowers/specs/2026-08-12-stage0-browser-harness-design.md);
-artifacts 2 and 3 are expected to reuse the same harness but each needs its own spec. The current fixture (a
+artifacts 2 and 3 each need their own spec, and artifact 3's is written:
+[docs/superpowers/specs/2026-08-14-stage0-perf-benchmark-design.md](../superpowers/specs/2026-08-14-stage0-perf-benchmark-design.md).
+Harness reuse is only partial — the existing stepping path renders nothing, so artifact 3 needs its own
+frame driver and depends on artifact 2 for the instrumentation it counts. The current fixture (a
 miner feeding a belt run) exercises mining, belt item movement, and belt-to-belt handoff; it does not yet
 cover item processors, splitters/mergers, storage, wires, or hub delivery/goal progression — a broader
 fixture remains a future addition, not yet required by the anti-bloat policy's premise below. **Done when**
