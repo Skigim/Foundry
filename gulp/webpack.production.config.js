@@ -3,10 +3,7 @@
 const path = require("path");
 const webpack = require("webpack");
 const { getRevision, getVersion, getAllResourceImages } = require("./buildutils");
-
 const TerserPlugin = require("terser-webpack-plugin");
-const StringReplacePlugin = require("string-replace-webpack-plugin");
-const UnusedFilesPlugin = require("unused-files-webpack-plugin").UnusedFilesWebpackPlugin;
 
 module.exports = ({
     environment,
@@ -158,15 +155,7 @@ module.exports = ({
             maxEntrypointSize: 5120000,
             maxAssetSize: 5120000,
         },
-        plugins: [
-            new webpack.DefinePlugin(globalDefs),
-
-            new UnusedFilesPlugin({
-                failOnUnused: false,
-                cwd: path.join(__dirname, "..", "src", "js"),
-                patterns: ["../src/js/**/*.js"],
-            }),
-        ],
+        plugins: [new webpack.DefinePlugin(globalDefs)],
         module: {
             rules: [
                 {
@@ -221,17 +210,7 @@ module.exports = ({
                             },
                         },
                         "uglify-template-string-loader", // Finally found this plugin
-                        StringReplacePlugin.replace({
-                            replacements: [
-                                { pattern: /globalConfig\.tileSize/g, replacement: () => "32" },
-                                { pattern: /globalConfig\.halfTileSize/g, replacement: () => "16" },
-                                {
-                                    pattern: /globalConfig\.beltSpeedItemsPerSecond/g,
-                                    replacement: () => "2.0",
-                                },
-                                { pattern: /globalConfig\.debug/g, replacement: () => "''" },
-                            ],
-                        }),
+                        path.resolve(__dirname, "loader.inline_globals.js"),
                     ],
                 },
                 {
