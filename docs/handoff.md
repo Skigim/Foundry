@@ -11,7 +11,7 @@ Living context for picking up work on Foundry in a fresh session. To use it, poi
 | Empirical constraints | Something is learned by running code. Append-only; never delete a constraint without proving it no longer holds. |
 | Current state / Next step / Open questions | Every session. |
 
-Last updated: 2026-08-15
+Last updated: 2026-08-16
 
 ---
 
@@ -286,7 +286,7 @@ Learned by running code, not by assuming. Each one has already cost time once.
   zoom range is 0.1–3 (`config.js:117-118`). Below 0.9 the renderer switches to cheap chunk-overview
   drawing, so zooming out does *not* monotonically increase drawn entities. The worst case for the diagnosed
   bottleneck sits just above 0.9. Any pinned benchmark camera must account for this.
-- **`CircularDependencyPlugin` cannot run under Rspack.** `CircularDependencyPlugin` hooks `compilation.hooks.optimizeModules`, a webpack-internal hook Rspack does not implement. The circular import guard was dropped in the swap (see Open questions).
+- **`CircularDependencyPlugin` cannot run under Rspack.** `CircularDependencyPlugin` hooks `compilation.hooks.optimizeModules`, a webpack-internal hook Rspack does not implement. The circular import guard was dropped in the swap; replacing it is Stage 2's first task (see [phase-1.md](roadmap/phase-1.md)).
 - **Minifier evaluation: `SwcJsMinimizerRspackPlugin` vs `TerserPlugin`.** Rspack's built-in SWC minimizer dropped production cold bundle time from 29.41s to 15.89s (a 1.85x speedup; 3.98x total speedup vs webpack 4's 63.26s) with only +0.47% (+9.15 KB) size difference, and passed the prod boot smoke test cleanly. `keep_fargs` has no SWC equivalent and was dropped without issue.
 - **Worker loading under Rspack requires `new Worker(new URL(...))` and explicit `output.publicPath`.** Web prod uses `/v/<commitHash>/` for cachebusting, and standalone uses `""`. `output.publicPath` alone was sufficient; `output.workerPublicPath` was not needed.
 - **Collapse to single dependency tree required `resolutions` for `through2` and `@types/minimatch`.** `gulp-audiosprite` declared `through2: "*"` which resolved to v5.x breaking `.obj()`; pinned to `^3.0.1`. `@types/glob` pulled in `@types/minimatch: "*"` (v6 stub with no declarations) breaking TypeScript 3.9.3 `tsc`; pinned to `^3.0.5`. `src/js/tsconfig.json` explicitly scoped types to `["cordova", "filesystem", "node"]` to prevent unwanted types like `@types/ws` from polluting compilation.
@@ -317,6 +317,11 @@ Measured build timings (`docs/build-timings.md`):
 Modernizing `src/js` to TypeScript is now unlocked by Rspack natively supporting `.ts` without separate loaders.
 
 Things carried forward from Stage 1 into Stage 2:
+- **Stage 2's first task is restoring the circular-import guard Stage 1 dropped** — specced in
+  [phase-1.md](roadmap/phase-1.md)'s Stage 2 section. It is deliberately scheduled before the first
+  conversion commit, because the migration's module moves are what would introduce a cycle, and sized to
+  include validating that the replacement actually parses this codebase rather than silently finding
+  nothing.
 - The prod boot smoke test (`yarn test:browser:prod`) now exists and guards the prod bundle across transformations.
 - `/* typehints:start/end */` blocks and the `webpack-strip-block` loader dependency are Stage 2's to retire into real TypeScript imports.
 - Worker chunks are separate emitted files whose URLs depend on `output.publicPath`.
@@ -341,12 +346,15 @@ Things carried forward from Stage 1 into Stage 2:
   alone is fine, but anything broader risks skipping the build on a push that genuinely needs it, and a
   required-check configuration will treat a skipped job differently from a passing one. Decide deliberately;
   do not bundle it into a task.
-- **The circular-import guard was dropped in the Rspack swap and has no replacement.**
-  `gulp/webpack.config.js` ran `circular-dependency-plugin` with `failOnError: true`, so a new import
-  cycle in `src/js` failed the dev build. The plugin hooks `compilation.hooks.optimizeModules`, which
-  Rspack does not implement, so it did not survive Stage 1. Nothing currently detects a new cycle.
-  Options: an Rspack-native equivalent if one exists, `madge --circular src/js` as a CI step, or accept
-  the gap. Deliberately not bundled into the bundler swap.
+- **~~The circular-import guard was dropped in the Rspack swap and has no replacement.~~ RESOLVED
+  2026-08-16 — assigned to Stage 2 as its first task.** `gulp/webpack.config.js` ran
+  `circular-dependency-plugin` with `failOnError: true`, so a new import cycle in `src/js` failed the dev
+  build. The plugin hooks `compilation.hooks.optimizeModules`, which Rspack does not implement, so it did
+  not survive Stage 1, and nothing currently detects a new cycle. The gap was accepted for the Stage 1
+  merge on the grounds that Stage 1 moved no imports — three `.js` files touched under `src/js`, all
+  worker-URL changes — so there was nothing for a guard to catch, while Stage 2's wholesale module moves
+  are where the risk actually lives. See [phase-1.md](roadmap/phase-1.md)'s Stage 2 section for the task,
+  including why `madge` needs validating against the 1,942 extensionless specifiers before it is trusted.
 - Whether to bump the deprecated action versions (see Empirical constraints) as a standalone change.
 - Local branches `phase-1/stage-0-harness`, `phase-1/stage-0-ci`, and `phase-1/stage-0-tslint-fix` were
   deleted (confirmed merged) in Task 7. `phase-1/stage-0-boot-smoke` and `phase-1/stage-0-golden-hash` — the

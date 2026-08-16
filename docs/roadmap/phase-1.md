@@ -149,7 +149,8 @@ and incremental watch rebuilds improved 14.6x (980ms -> 67ms), decisively beatin
 nine build variants (`gulp/build_variants.js`) build cleanly. The `NODE_OPTIONS=--openssl-legacy-provider`
 workaround was eliminated, the two dependency trees were collapsed into one root tree, and the CI test matrix
 enforces both dev and prod boot smoke tests as well as worker and determinism tests. `CircularDependencyPlugin`
-was retired as Rspack does not support webpack compilation optimizeModules hooks (noted in handoff as a known gap).
+was retired as Rspack does not support webpack compilation `optimizeModules` hooks; replacing the circular-import
+guard it provided is Stage 2's first task, below.
 
 **Done when:** one dependency tree, sub-second incremental dev rebuilds, all build variants
 (`gulp/build_variants.js`) still produce working artifacts, smoke test green. **Met 2026-08-15**
@@ -162,6 +163,19 @@ doing the structural work first means doing the dangerous part blind.
 **Starting position is better than it looks:** `src/js` is already JSDoc-annotated and checked by
 `tsc --checkJs` with `strictFunctionTypes`, `noImplicitThis`, and `alwaysStrict` (see
 `src/js/tsconfig.json`). This is a conversion, not an introduction of types.
+
+**First task — restore the circular-import guard.** Stage 1 dropped `CircularDependencyPlugin`, which ran
+with `failOnError: true` on the dev build, because it hooks `compilation.hooks.optimizeModules` and Rspack
+does not implement that hook. Nothing replaced it. The gap is harmless while the module graph sits still —
+Stage 1 touched three `.js` files under `src/js`, all worker-URL changes, no import restructuring — but this
+stage moves modules wholesale, which is precisely what introduces cycles. The codebase is already
+cycle-prone: `core/global_registries.js:12`, `mods/mod_signals.js:10`, and `game/building_codes.js:46` each
+document a workaround for one. Restore the guard before the first conversion commit, not after.
+`madge --circular src/js` is the leading candidate, but size the task to *validate* it rather than assume
+it: madge resolves imports itself, and `src/js` has 1,942 extensionless relative specifiers that only
+resolve under bundler semantics, so an unconfigured run can report a clean graph it never actually parsed.
+Prove it fails on a deliberately introduced cycle before trusting it, and prefer configuring it once
+against the post-migration `.ts` layout over configuring it twice.
 
 **Order within the stage:** config and leaf modules → `src/js/core/` → `src/js/game/` systems and
 components → `src/js/states/` and UI. Keep `allowJs: true` throughout so the tree stays buildable at every
