@@ -54,7 +54,6 @@
         "stream-browserify": "^3.0.0",
         "strictdom": "^1.0.1",
         "strip-indent": "^3.0.0",
-        "terser-webpack-plugin": "^5",
         "through2": "^3.0.1",
         "uglify-template-string-loader": "^1.1.0",
         "webpack-strip-block": "^0.2.0",

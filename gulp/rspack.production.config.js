@@ -4,8 +4,6 @@ const path = require("path");
 const rspack = require("@rspack/core");
 const { getRevision, getVersion, getAllResourceImages } = require("./buildutils");
 
-const TerserPlugin = require("terser-webpack-plugin");
-
 module.exports = ({
     environment,
     es6 = false,
@@ -82,24 +80,14 @@ module.exports = ({
             sideEffects: true,
 
             minimizer: [
-                new TerserPlugin({
-                    parallel: true,
-                    terserOptions: {
-                        ecma: es6 ? 6 : 5,
-                        parse: {},
-                        module: true,
-                        toplevel: true,
-                        keep_classnames: !minifyNames,
-                        keep_fnames: !minifyNames,
-                        safari10: true,
+                new rspack.SwcJsMinimizerRspackPlugin({
+                    minimizerOptions: {
                         compress: {
                             arguments: false, // breaks
                             drop_console: false,
                             global_defs: globalDefs,
-                            keep_fargs: !minifyNames,
                             keep_infinity: true,
                             passes: 2,
-                            module: true,
                             pure_funcs: [
                                 "Math.radians",
                                 "Math.degrees",
@@ -121,22 +109,20 @@ module.exports = ({
                             toplevel: true,
                             unsafe_math: true,
                             unsafe_arrows: false,
+                            keep_classnames: !minifyNames,
+                            keep_fnames: !minifyNames,
                         },
                         mangle: {
                             reserved: ["__$S__"],
                             eval: true,
                             keep_classnames: !minifyNames,
                             keep_fnames: !minifyNames,
-                            module: true,
                             toplevel: true,
                             safari10: true,
                         },
                         format: {
                             comments: false,
                             ascii_only: true,
-                            beautify: false,
-                            braces: false,
-                            ecma: es6 ? 6 : 5,
                             preamble:
                                 "/* Foundry (shapez.io fork) - " +
                                 getVersion() +

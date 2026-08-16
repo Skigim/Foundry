@@ -24,6 +24,8 @@ Record the bundler, the machine, and the date every time.
 
 The Rspack swap delivers substantial speedups across all three metrics on the same hardware: cold dev bundle improved by **1.80x** (8.76s -> 4.88s), cold production bundle improved by **2.15x** (63.26s -> 29.41s), and incremental dev watch rebuilds improved by **14.6x** (980ms -> 67ms). The incremental rebuild time of ~67ms decisively meets and exceeds the Phase 1 Stage 1 "Done when" bar of sub-second incremental rebuilds (comfortably beating Community Edition's reported ~250ms baseline).
 
+**Minifier follow-up (Terser -> SWC)**: Swapping `terser-webpack-plugin` (29.41s prod build, 1,931,821 bytes bundle size) for Rspack's built-in `SwcJsMinimizerRspackPlugin` further reduced cold prod build time to **15.89s** (a **1.85x** minifier speedup; **3.98x** total speedup vs webpack 4's 63.26s) with a negligible bundle size change of +0.47% (1,940,973 bytes, +9.15 KB).
+
 
 ## Build variant sweep
 
