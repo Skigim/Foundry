@@ -141,8 +141,18 @@ loader (npm `webpack-strip-block`), worker loading (`src/js/webworkers/`), and a
 dev/HMR ~5s → ~250ms. Their config is the single most directly useful thing to read from CE. Reimplement,
 do not merge.
 
+**Status:** Landed end-to-end on `phase-1/stage-1-build-tooling`. The bundler was replaced with Rspack across
+dev and production configs (`gulp/rspack.config.js` and `gulp/rspack.production.config.js`), and minification
+was upgraded from Terser to SWC (`SwcJsMinimizerRspackPlugin`). Measured build times (see [docs/build-timings.md](../build-timings.md)):
+cold dev bundle improved 1.80x (8.76s -> 4.88s), cold production bundle improved 3.98x (63.26s -> 15.89s),
+and incremental watch rebuilds improved 14.6x (980ms -> 67ms), decisively beating the sub-second goal. All
+nine build variants (`gulp/build_variants.js`) build cleanly. The `NODE_OPTIONS=--openssl-legacy-provider`
+workaround was eliminated, the two dependency trees were collapsed into one root tree, and the CI test matrix
+enforces both dev and prod boot smoke tests as well as worker and determinism tests. `CircularDependencyPlugin`
+was retired as Rspack does not support webpack compilation optimizeModules hooks (noted in handoff as a known gap).
+
 **Done when:** one dependency tree, sub-second incremental dev rebuilds, all build variants
-(`gulp/build_variants.js`) still produce working artifacts, smoke test green.
+(`gulp/build_variants.js`) still produce working artifacts, smoke test green. **Met 2026-08-15**
 
 ## Stage 2 — TypeScript migration
 

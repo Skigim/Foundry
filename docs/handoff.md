@@ -11,7 +11,7 @@ Living context for picking up work on Foundry in a fresh session. To use it, poi
 | Empirical constraints | Something is learned by running code. Append-only; never delete a constraint without proving it no longer holds. |
 | Current state / Next step / Open questions | Every session. |
 
-Last updated: 2026-08-14
+Last updated: 2026-08-15
 
 ---
 
@@ -286,176 +286,41 @@ Learned by running code, not by assuming. Each one has already cost time once.
   zoom range is 0.1–3 (`config.js:117-118`). Below 0.9 the renderer switches to cheap chunk-overview
   drawing, so zooming out does *not* monotonically increase drawn entities. The worst case for the diagnosed
   bottleneck sits just above 0.9. Any pinned benchmark camera must account for this.
+- **`CircularDependencyPlugin` cannot run under Rspack.** `CircularDependencyPlugin` hooks `compilation.hooks.optimizeModules`, a webpack-internal hook Rspack does not implement. The circular import guard was dropped in the swap (see Open questions).
+- **Minifier evaluation: `SwcJsMinimizerRspackPlugin` vs `TerserPlugin`.** Rspack's built-in SWC minimizer dropped production cold bundle time from 29.41s to 15.89s (a 1.85x speedup; 3.98x total speedup vs webpack 4's 63.26s) with only +0.47% (+9.15 KB) size difference, and passed the prod boot smoke test cleanly. `keep_fargs` has no SWC equivalent and was dropped without issue.
+- **Worker loading under Rspack requires `new Worker(new URL(...))` and explicit `output.publicPath`.** Web prod uses `/v/<commitHash>/` for cachebusting, and standalone uses `""`. `output.publicPath` alone was sufficient; `output.workerPublicPath` was not needed.
+- **Collapse to single dependency tree required `resolutions` for `through2` and `@types/minimatch`.** `gulp-audiosprite` declared `through2: "*"` which resolved to v5.x breaking `.obj()`; pinned to `^3.0.1`. `@types/glob` pulled in `@types/minimatch: "*"` (v6 stub with no declarations) breaking TypeScript 3.9.3 `tsc`; pinned to `^3.0.5`. `src/js/tsconfig.json` explicitly scoped types to `["cordova", "filesystem", "node"]` to prevent unwanted types like `@types/ws` from polluting compilation.
 
 ## Current state
 
-`origin/master`'s last change is the `108b93f3` merge of `phase-1/stage-0-golden-hash`
-([PR #2](https://github.com/Skigim/Foundry/pull/2), now **merged**, not draft), on top of the earlier
-`d9d5ff25` merge of `phase-1/stage-0-boot-smoke` ([PR #1](https://github.com/Skigim/Foundry/pull/1), also
-**merged**). Both branches merged with `--no-ff`, per the standing git-workflow convention. Together they
-landed Stage 0 end to end: `phase-1/stage-0-boot-smoke` landed artifact 4 (the `browser-test` CI job,
-`test/browser/harness.js`, `test/browser/boot.smoke.test.js`, `package.json`'s `yarn test`/`yarn test:browser`
-split, and the CI step that runs `yarn test:browser`); `phase-1/stage-0-golden-hash` landed artifact 1 (the
-golden-save simulation hash) on top of that. This is a real source/tooling change, not docs-only.
-`phase-1/stage-0-boot-smoke`'s last CI run before its merge,
-[31702432310](https://github.com/Skigim/Foundry/actions/runs/31702432310), was **fully green across all four
-jobs**: `CI` 1m44s, `test` 16s, `browser-test` 2m47s, `yaml-lint` 28s. `phase-1/stage-0-golden-hash`'s own
-last CI run, PR #2 ([31727768465](https://github.com/Skigim/Foundry/actions/runs/31727768465)), was also
-fully green, with `browser-test`'s "Run browser tests" step reporting `# tests 3` / `# pass 3` / `# fail 0`
-— the boot smoke test plus both golden-save tests (self-consistency, then the pinned-hash reference check).
+**Stage 1 (Build Tooling: Webpack 4 to Rspack swap) has landed end-to-end on `phase-1/stage-1-build-tooling`.**
+All 13 tasks of the Stage 1 plan are complete:
 
-**Stage 0 artifacts 1 (golden-save simulation hash) and 4 (boot smoke test) now exist and run in CI;
-artifacts 2 and 3 do not yet.** Also in place, as a precursor toward artifact 1, and confirmed
-cross-platform:
+- **Bundler replacement:** Webpack 4 and `webpack-stream` were replaced by `@rspack/core` across both dev and production configs (`gulp/rspack.config.js` and `gulp/rspack.production.config.js`). Unmaintained webpack plugins (`string-replace-webpack-plugin`, `unused-files-webpack-plugin`, `worker-loader`, `CircularDependencyPlugin`) were retired, and a local loader `gulp/loader.inline_globals.js` was introduced for hot globalConfig constant inlining.
+- **Minifier upgrade:** `terser-webpack-plugin` was swapped for Rspack's native `SwcJsMinimizerRspackPlugin`, dropping prod build time to 15.89s with negligible size delta (+0.47%).
+- **Worker migration:** Web workers in `src/js/core/async_compression.js` and `src/js/core/animation_frame.js` were migrated to standard `new Worker(new URL(..., import.meta.url))` syntax.
+- **Dependency collapse:** The two separate yarn trees (`package.json` and `gulp/package.json`) were collapsed into a single root tree. Gulp runs via `yarn gulp <task>` from the repo root with `--gulpfile gulp/gulpfile.js --cwd gulp`.
+- **OpenSSL legacy flag deleted:** The `NODE_OPTIONS=--openssl-legacy-provider` workaround was completely removed from CI, `.claude/dev-server.cmd`, and test harness documentation.
+- **New tests in CI:** A production bundle boot smoke test (`test/browser/prod/boot.prod.smoke.test.js`) and a web worker compression round-trip smoke test (`test/browser/worker.smoke.test.js`) were added and pass in CI.
+- **Verification:** All 9 build variants (`gulp/build_variants.js`) build cleanly. The full test matrix (`yarn lint`, `yarn tslint`, `yarn test`, `yarn test:browser`, `yarn test:browser:prod`) is 100% green, and `GOLDEN_SAVE_HASH` is preserved unchanged.
 
-- `test/rng.determinism.test.js` — 7 tests, `node:test` + `node:assert`, zero new dependencies. Covers
-  same-seed equality, different-seed inequality, numeric/string seed equivalence, `reseed`/`setSeed`, and
-  `export`/`importState`.
-- Includes **committed reference values for seed 42** as a float-drift canary. Do not regenerate them to
-  make CI pass — a change there means determinism broke, and that is the finding, not an obstacle.
-
-```bash
-yarn test    # equivalent to: node --test "test/*.test.js"
-```
-
-`yarn test` runs in CI on a dedicated `test` job (`.github/workflows/ci.yml`) pinned to Node 22.x — the
-version the seed-42 references were generated on — on `ubuntu-latest`. Passing there means the seed-42
-values are genuine cross-platform evidence, not just a same-machine check. The job skips `yarn install` —
-the test script has no dependencies of its own.
-
-`yarn test` (`node --test "test/*.test.js"`) and `yarn test:browser`
-(`node --test "test/browser/**/*.test.js"`) are now separate scripts, deliberately: `test/browser/**` needs a
-real dev build, Playwright, and a full `yarn install` first, and `yarn test` is meant to stay a few-second,
-dependency-free check. `test/browser/harness.js` is the shared module — `assertBuildPresent`,
-`startStaticServer`, `launchGame`, `waitForMainMenu` — that Branch B extended with the determinism helpers
-for artifact 1. `test/browser/boot.smoke.test.js` is artifact 4 itself: it asserts the dev bundle reaches
-`document.body.id === "state_MainMenuState"` with zero uncaught page errors. It runs in CI's `browser-test`
-job, after the dev bundle and atlas are built and Chromium is installed via `npx playwright install
---with-deps chromium`.
-
-**Artifact 1 (golden-save simulation hash) is `test/browser/golden_save.test.js`, backed by determinism
-helpers Branch B added to `test/browser/harness.js`**: `prepareDeterministicRun` (pins the tick rate to 60
-and guards `SIMULATION_ALTERING_DEBUG_FLAGS`), `loadFixtureGame`, `runTicks`, and `hashSimulationState`.
-`test/browser/dump_state.js` and `test/browser/generate_fixture.js` are the one-off scripts used to produce
-and inspect the committed fixture, not part of the test run itself. The fixture is
-`test/fixtures/golden_save.json` — a miner plus 20 belts, 22 entities, deliberately short of back-pressure
-(1 item in flight) — and the reference value is `GOLDEN_SAVE_HASH =
-"0416cc3d1585253c697d0456ac88ec3f2d73f5d23730f5215bb1281c93f1fea2"`, pinned from an actual measured run, not
-invented. Two tests: same-run self-consistency (two independent `launchGame()` calls must hash identically),
-then a reference-hash comparison against the pinned value. Both settled implementation choices the design
-spec left open are now fixed by this fixture: **600 ticks at a pinned 60 UPS**, and **a fixture of a miner
-plus 20 belts**.
-
-**The pre-existing `TSLint` failures are fixed** (`phase-1/stage-0-tslint-fix`, fast-forwarded into master
-at `01a766fe` — single commit, so no `--no-ff`). All 7 were type-only JSDoc/tsc issues, unrelated to the
-CI-wiring work: `mod_interface.js`'s `afterPrams`/`extendsPrams` typedefs used an invalid spread-tuple
-(fixed to match the sibling `beforePrams` typedef's non-spread shape), `game_analytics.js` assigned
-`window.setAbt` without declaring it (added to `globals.d.ts`'s ambient `Window` interface), and
-`main_menu.js`/`preload.js` treated `querySelector` results as `HTMLElement` without saying so (added
-`@type` annotations at the declarations). One real behavior change included: `preload.js`'s first
-`setStatus("Booting")` call now passes `0` for `progress` explicitly, like every other call site already
-did — previously this set `NaN%` as the boot progress bar's width. Everything else is compile-time only;
-JSDoc types are stripped before the real bundle ships.
-
-**2026-08-14 was design work plus getting a local dev server running for fixture authoring.** It added
-`.claude/dev-server.cmd` and `.claude/launch.json` (see Empirical constraints) and one patch inside
-`gulp/node_modules` that git cannot track at all. No `test/` or CI changes.
-
-**The one `src/` change that day: `phase-1/full-level-progression-in-browser`.**
-`generateLevelsForVariant` (`modes/levels.js`) now routes every build except the Steam demo to
-`STANDALONE_LEVELS`, so browser builds get the full 26-level progression instead of the 9-level
-`WEB_DEMO_LEVELS` — see the level-table bullet under Empirical constraints for why that was load-bearing.
-This is a deliberate divergence from upstream, not a bug fix: the split was shapez.io's free-web-demo →
-paid-Steam funnel, and Foundry has no such split. `WEB_DEMO_LEVELS` is left in the file, unreferenced, with
-a comment saying so. Verified at runtime against the running game (26 levels, level 1 requiring 30 not 10,
-wires/filters/logic-gates rewards all present), plus `yarn lint` and `yarn tslint`. Cosmetic upstream
-leftovers deliberately untouched: the page title still says "shapez Demo" and the main menu still shows a
-Steam sign-in link.
-
-**Artifacts 2 and 3 are deferred into Stage 3's prerequisites (decided 2026-08-14).** Artifacts 1
-(golden-save simulation hash) and 4 (boot smoke test) are done, landed, and enforced in CI — and they are the
-two that protect Stages 1 and 2. Artifacts 2 and 3 only ever served Stage 3, so building them now buys
-nothing. Stage 0's "Done when" in phase-1.md was rewritten to match, and Stage 3 now opens by building both.
-Deferred, not cancelled: Stage 3's correctness check *is* draw-call recording.
-
-Artifact 3 is specced —
-[docs/superpowers/specs/2026-08-14-stage0-perf-benchmark-design.md](superpowers/specs/2026-08-14-stage0-perf-benchmark-design.md).
-Artifact 2 is not. **Harness reuse is only partial**, correcting what this document previously said: both
-`prepareDeterministicRun` (which detaches the frame loop, `harness.js:413`) and `runTicks` (which steps
-`core.updateLogic()` only, never reaching `GameCore.draw()`, `harness.js:466`) are correct for a
-simulation hash and useless for a rendering benchmark. `launchGame` / `waitForMainMenu` / `loadFixtureGame`
-are reusable; the stepping path is not.
-
-**Pre-Stage-1 wall-clock baseline (2026-08-14).** Crude, hand-taken, and recorded here specifically because
-Stage 1 makes it unrepeatable. Current webpack 4 dev build, `web-localhost` variant, developer machine (not
-CI), on a hand-played save of 3,496 entities / 2,297 belts / 607 belt paths at level 15:
-
-| camera | fps | frame | tick |
-|---|---|---|---|
-| zoomed in (per-entity renderer) | 78 | 12.82 ms | 1.19 ms |
-| zoomed out (below the 0.9 overview cutoff) | 135 | 7.41 ms | 0.96 ms |
-
-Simulation is ~1 ms against a ~13 ms frame, so rendering already owns the frame at this scale — the shape
-#1021 describes, at a comfortable level. Exact `zoomLevel` values were not captured (the console truncated
-the object), so treat the two rows as "above and below the cutoff," not as pinned camera positions.
-
-**Stage 0's execution substrate is decided, and Branches A and B have both implemented on it.**
-[docs/superpowers/specs/2026-08-12-stage0-browser-harness-design.md](superpowers/specs/2026-08-12-stage0-browser-harness-design.md)
-is the authoritative spec and is unchanged; read it before writing any Stage 0 test code. In short: one substrate for the whole
-stage — a Playwright harness driving a **real built dev bundle** — with the boot smoke test (artifact 4) built
-**first**, then the golden-save hash (artifact 1) layered on top by Branch B. Both are now landed. Artifacts
-2 and 3 are expected to reuse the same harness.
-
-Why, briefly. An earlier design tried to run the simulation under plain Node behind a few hand-rolled shims;
-independent review disproved its premise and it is kept, marked superseded, at
-[2026-08-12-stage0-golden-save-hash-design.md](superpowers/specs/2026-08-12-stage0-golden-save-hash-design.md).
-The fallback — bundling a small dedicated test entry point — was then chosen for being cheap, and a probe build
-showed it isn't: bundling the simulation is bundling the whole game (see the `require.context` constraint
-above), so it needs the full asset pipeline regardless. Once a real build is required either way, a real
-browser costs a Playwright dependency and little else, and it removes the test/reality-drift question that
-sank the first design. Deferring the whole thing until after Stage 1 was rejected for running the roadmap's
-riskiest change with no guard at all.
-
-Two consequences worth carrying forward: **testing targets the dev bundle**, because `window.shapez` does not
-exist in web prod builds — extending the smoke test to boot a prod bundle is Stage 1's job. And **cutting the
-`savegame.js -> modloader.js` edge is now a recorded Stage 4 target**; doing it sooner would mean
-engine-boundary surgery before the guard that surgery needs exists.
+Measured build timings (`docs/build-timings.md`):
+- Cold dev bundle: **4.88s** (vs 8.76s webpack 4, **1.80x speedup**)
+- Incremental watch rebuild: **67ms** (vs 980ms webpack 4, **14.6x speedup** — sub-second target decisively achieved)
+- Cold prod bundle: **15.89s** (vs 63.26s webpack 4, **3.98x speedup**)
 
 ## Next step
 
-**Branch A (Tasks 1–4) and Branch B (Tasks 5–7) are both done and merged to master.** Branch A: the atlas
-gate proof (Task 1), the Playwright harness and boot smoke test (Task 2), wiring `yarn test:browser` into
-CI's `browser-test` job (Task 3), and its doc/roadmap update (Task 4) — landing Stage 0 artifact 4. Branch B:
-determinism controls and the committed fixture (Task 5), the golden-save hash test itself (Task 6), and CI
-confirmation plus this doc/roadmap update (Task 7) — landing Stage 0 artifact 1. Both are complete and
-enforced in CI.
+**Stage 1 is complete.**
 
-**Stage 0 is closed.** Its exit criteria were rewritten on 2026-08-14 to cover artifacts 1 and 4 plus the
-determinism claim, all met; artifacts 2 and 3 moved into Stage 3's prerequisites. The fixture-gathering task
-that used to sit here — hand-playing a base for artifact 3 — was completed, measured, and found ~3% of the
-scale needed. See Current state; the save itself is not the bottleneck the roadmap thought it was.
+**Next: Stage 2 (TypeScript migration).** Specced in roadmap (`docs/roadmap/phase-1.md`).
+Modernizing `src/js` to TypeScript is now unlocked by Rspack natively supporting `.ts` without separate loaders.
 
-**Next: Stage 1 (build tooling).** Specced at
-[docs/superpowers/specs/2026-08-14-stage1-build-tooling-design.md](superpowers/specs/2026-08-14-stage1-build-tooling-design.md).
-No code written yet. Artifacts 1 and 4 exist precisely to guard this stage, and both are green — this is the
-first stage that gets to use the safety net rather than build it.
-
-Two questions the spec leaves open deliberately, both needing a decision early rather than mid-migration:
-whether the two yarn trees collapse in this stage or a follow-up, and what replaces the unmaintained
-webpack-only plugins in the production config. Read the spec before touching any build file.
-
-A few things worth carrying into any new artifact's spec, learned the hard way on Branch B and unlikely to be
-specific to golden-save hashing:
-
-- **A committed reference value is never regenerated to make CI green.** If a number moves, that is the
-  finding, not an obstacle. `dump_state.js` is the precedent for a script that says *what* moved rather than
-  just that something did.
-- **Self-consistency before pinning a reference, always** — run twice locally (or however many times the
-  new artifact's nondeterminism surface warrants) before committing anything meant to be stable. Task 6 Step
-  2 is the precedent; reordering it produces a green test that proves nothing.
-- **Check any new guard list (debug flags, config fields, whatever the new artifact is sensitive to) against
-  the actual source, not by intuition.** The adversarial pass on `SIMULATION_ALTERING_DEBUG_FLAGS` (see
-  Empirical constraints) found real gaps in a list that looked complete.
+Things carried forward from Stage 1 into Stage 2:
+- The prod boot smoke test (`yarn test:browser:prod`) now exists and guards the prod bundle across transformations.
+- `/* typehints:start/end */` blocks and the `webpack-strip-block` loader dependency are Stage 2's to retire into real TypeScript imports.
+- Worker chunks are separate emitted files whose URLs depend on `output.publicPath`.
+- TypeScript is pinned at 3.9.3 with JSDoc typechecking; Stage 2 will migrate `.js` to `.ts` files incrementally (leaf modules -> core -> game -> states/UI).
 
 ## Open questions
 
