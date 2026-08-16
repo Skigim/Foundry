@@ -35,7 +35,9 @@ module.exports = function (api) {
         highlightCode: true,
         sourceType: "module",
         sourceMaps: false,
-        parserOpts: {},
+        parserOpts: {
+            plugins: ["importMeta"],
+        },
         only: ["../src/js"],
         generatorOpts: {
             retainLines: false,

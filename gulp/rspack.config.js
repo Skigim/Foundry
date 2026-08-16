@@ -1,12 +1,10 @@
 // @ts-nocheck
 
 const path = require("path");
-const webpack = require("webpack");
+const rspack = require("@rspack/core");
 const { getRevision, getVersion, getAllResourceImages } = require("./buildutils");
-const CircularDependencyPlugin = require("circular-dependency-plugin");
 
 module.exports = ({
-    watch = false,
     standalone = false,
     chineseVersion = false,
     wegameVersion = false,
@@ -19,18 +17,22 @@ module.exports = ({
         entry: {
             "bundle.js": [path.resolve(__dirname, "../src/js/main.js")],
         },
-        watch,
-        node: {
-            fs: "empty",
-        },
         resolve: {
             alias: {
                 "global-compression": path.resolve(__dirname, "..", "src", "js", "core", "lzstring.js"),
             },
+            // webpack 4's node: { fs: "empty" }.
+            fallback: {
+                fs: false,
+                crypto: false,
+            },
+        },
+        resolveLoader: {
+            modules: [path.resolve(__dirname, "node_modules"), "node_modules"],
         },
         context: path.resolve(__dirname, ".."),
         plugins: [
-            new webpack.DefinePlugin({
+            new rspack.DefinePlugin({
                 assert: "window.assert",
                 assertAlways: "window.assert",
                 abstract:
@@ -50,40 +52,20 @@ module.exports = ({
                 G_BUILD_VERSION: JSON.stringify(getVersion()),
                 G_ALL_UI_IMAGES: JSON.stringify(getAllResourceImages()),
             }),
-
-            new CircularDependencyPlugin({
-                // exclude detection of files based on a RegExp
-                exclude: /node_modules/,
-
-                // add errors to webpack instead of warnings
-                failOnError: true,
-
-                // allow import cycles that include an asyncronous import,
-                // e.g. via import(/* webpackMode: "weak" */ './file.js')
-                allowAsyncCycles: false,
-
-                // set the current working directory for displaying module paths
-                cwd: path.join(__dirname, "..", "src", "js"),
-            }),
         ],
         module: {
             rules: [
                 {
                     test: /\.json$/,
                     enforce: "pre",
-                    use: ["./gulp/loader.compressjson"],
+                    use: [path.resolve(__dirname, "loader.compressjson.js")],
                     type: "javascript/auto",
                 },
                 { test: /\.(png|jpe?g|svg)$/, loader: "ignore-loader" },
                 { test: /\.nobuild/, loader: "ignore-loader" },
                 {
                     test: /\.md$/,
-                    use: [
-                        {
-                            loader: "html-loader",
-                        },
-                        "markdown-loader",
-                    ],
+                    use: [{ loader: "html-loader" }, "markdown-loader"],
                 },
                 {
                     test: /\.js$/,
@@ -103,18 +85,8 @@ module.exports = ({
                     ],
                 },
                 {
-                    test: /\.worker\.js$/,
-                    use: {
-                        loader: "worker-loader",
-                        options: {
-                            fallback: false,
-                            inline: true,
-                        },
-                    },
-                },
-                {
                     test: /\.ya?ml$/,
-                    type: "json", // Required by Webpack v4
+                    type: "json",
                     use: "yaml-loader",
                 },
             ],
@@ -122,6 +94,13 @@ module.exports = ({
         output: {
             filename: "bundle.js",
             path: path.resolve(__dirname, "..", "build"),
+            // Must be explicit. gulp/preloader/preloader.js XHRs bundle.js into a
+            // Blob and loads it from a blob: URL, so automatic public-path
+            // detection (document.currentScript.src) resolves to blob:... and the
+            // emitted worker chunk would be fetched from a nonexistent origin.
+            // Standalone/electron includes bundle.js with a plain <script src>
+            // from a file:// document, where a relative path is correct.
+            publicPath: standalone ? "" : "/",
         },
     };
 };

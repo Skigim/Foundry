@@ -16,42 +16,42 @@ progression). See [README.md](README.md) for the full vision/roadmap.
 
 ## Repository layout
 
-This repo has **two separate yarn dependency trees** that must both be installed:
-
-- root (`package.json` / `yarn.lock`) — the game source itself (`src/`)
-- `gulp/` (`gulp/package.json` / `gulp/yarn.lock`) — the build tooling (gulpfile, webpack, image/sound/
-  translation pipelines, electron packaging). All gulp/webpack commands must be run from inside `gulp/`.
+This repo has **one yarn dependency tree** at the root (`package.json` / `yarn.lock`), covering both the
+game source (`src/`) and the build tooling (`gulp/`: gulpfile, Rspack configs, image/sound/translation
+pipelines, electron packaging). The two-tree layout was collapsed in Phase 1 Stage 1.
 
 ```bash
 yarn install
-cd gulp && yarn install && cd ..
 ```
 
 ## Common commands
 
 ```bash
-yarn dev              # cd gulp && yarn gulp -> runs the default gulp task (serve.web-localhost), dev webserver
-yarn devStandalone    # serves the electron/standalone variant instead of web
-yarn lint             # eslint src/js
+yarn dev              # yarn gulp -> runs the default gulp task (serve.web-localhost), dev webserver
+yarn devStandalone    # yarn gulp serve.standalone-steam — serves the electron/standalone variant instead of web
+yarn lint             # eslint src/js test
 yarn tslint           # cd src/js && tsc — typechecks the JSDoc-annotated JS against src/js/tsconfig.json
+yarn test             # node --test "test/*.test.js" — fast, dependency-free tests (RNG determinism)
+yarn test:browser     # node --test "test/browser/*.test.js" — Playwright test suite against dev bundle
+yarn test:browser:prod# node --test "test/browser/prod/*.test.js" — Playwright boot test against prod bundle
 yarn prettier-all     # formats src/**/*.* and gulp/**/*.*
 yarn syncTranslations # node sync-translations.js — syncs placeholder keys from translations/base-en.yaml into other locale files
 yarn buildTypes       # emits a declaration file from src/js/application.js
 ```
 
-Inside `gulp/`, `yarn gulp --tasks` lists all tasks (image atlas building, css, sounds, translations,
-per-variant `<variant>.code` / `serve.<variant>` / `<variant>` build tasks, electron packaging, etc.).
+`yarn gulp --tasks` lists all tasks (image atlas building, css, sounds, translations, per-variant
+`<variant>.code` / `serve.<variant>` / `<variant>` build tasks, electron packaging, etc.).
 `gulp/build_variants.js` defines the variants (`web-localhost`, `web-shapezio-beta`, `web-shapezio`,
 `standalone-steam`, `standalone-wegame`, `standalone-gog`, and China variants) — each controls the
-webpack environment (`dev`/`staging`/`prod`) and whether it's a standalone (electron) or web build.
+Rspack environment (`dev`/`staging`/`prod`) and whether it's a standalone (electron) or web build.
 
 On first run, the `localConfig.findOrCreate` gulp task copies
 `src/js/core/config.local.template.js` → `src/js/core/config.local.js` (gitignored); this happens
 automatically as part of `serve.*`/build tasks.
 
-**There is no automated test suite in this repo.** CI (`.github/workflows/ci.yml`) runs: install deps in
-both trees → `yarn lint` → `gulp translations.fullBuild` + `gulp localConfig.findOrCreate` → `yarn tslint`,
-plus a separate yamllint job over `translations/*.yaml`. Treat lint + tslint passing as the correctness bar.
+CI (`.github/workflows/ci.yml`) runs: `yarn` → `yarn lint` → `yarn gulp translations.fullBuild` +
+`yarn gulp localConfig.findOrCreate` → `yarn tslint` in the `setup` job; `yarn test` in the `test` job;
+and `yarn test:browser` + `yarn test:browser:prod` in `browser-test`. Treat lint + tslint + test passing as the correctness bar.
 
 ## Code style
 
@@ -78,7 +78,7 @@ stage. `git log --first-parent` gives the flat one-line-per-unit view when that'
 **Plain JS + JSDoc, typechecked like TypeScript.** There are no `.ts` files in `src/`; types come from
 JSDoc comments and are checked via `tsc --checkJs` against `src/js/tsconfig.json`. Files frequently have
 `/* typehints:start */ ... /* typehints:end */` blocks holding type-only imports — these are stripped from
-the actual webpack bundle by a custom loader (`gulp/loader.strip_block.js`) so they cost nothing at runtime.
+the actual bundle by the `webpack-strip-block` loader so they cost nothing at runtime.
 
 **`GameRoot` (`src/js/game/root.js`) is the central object** for a running game — it's constructed once per
 session and passed into almost every game class instead of using globals. It owns the entity manager, game
@@ -141,7 +141,7 @@ inside (engine work, not just mods):
   globally reachable this way, including things like `BUILD_OPTIONS` from `core/globals.js` that aren't
   otherwise obviously "public API."
 
-- **`G_IS_STANDALONE` is a webpack `DefinePlugin` constant baked in at *this* bundle's build time only.**
+- **`G_IS_STANDALONE` is an Rspack `DefinePlugin` constant baked in at *this* bundle's build time only.**
   It's fine to check directly inside engine code (`src/js/mods/modloader.js` does exactly that), but if code
   ever needs to be shared with or read from a mod's separately-bundled code, `G_IS_STANDALONE` won't exist
   there — use the exposed `BUILD_OPTIONS.IS_STANDALONE` (`src/js/core/globals.js:27`) for anything crossing

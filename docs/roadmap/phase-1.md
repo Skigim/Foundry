@@ -134,15 +134,26 @@ bundler" as "replace gulp" will stall this stage.
 
 **Highest-risk items** (all bundle-level, which is why Stage 0's smoke test exists): `DefinePlugin`
 constants (`G_IS_STANDALONE` and friends — see CLAUDE.md's footgun note), the `typehints` strip-block
-loader (`gulp/loader.strip_block.js`), worker loading (`src/js/webworkers/`), and asset/atlas resolution.
+loader (npm `webpack-strip-block`), worker loading (`src/js/webworkers/`), and asset/atlas resolution.
 
 **CE note:** CE replaced Webpack with Rspack in
 [PR #119](https://github.com/tobspr-games/shapez-community-edition/pull/119) — release builds ~10s → ~1s,
 dev/HMR ~5s → ~250ms. Their config is the single most directly useful thing to read from CE. Reimplement,
 do not merge.
 
+**Status:** Landed end-to-end on `phase-1/stage-1-build-tooling`. The bundler was replaced with Rspack across
+dev and production configs (`gulp/rspack.config.js` and `gulp/rspack.production.config.js`), and minification
+was upgraded from Terser to SWC (`SwcJsMinimizerRspackPlugin`). Measured build times (see [docs/build-timings.md](../build-timings.md)):
+cold dev bundle improved 1.80x (8.76s -> 4.88s), cold production bundle improved 3.98x (63.26s -> 15.89s),
+and incremental watch rebuilds improved 14.6x (980ms -> 67ms), decisively beating the sub-second goal. All
+nine build variants (`gulp/build_variants.js`) build cleanly. The `NODE_OPTIONS=--openssl-legacy-provider`
+workaround was eliminated, the two dependency trees were collapsed into one root tree, and the CI test matrix
+enforces both dev and prod boot smoke tests as well as worker and determinism tests. `CircularDependencyPlugin`
+was retired as Rspack does not support webpack compilation `optimizeModules` hooks; replacing the circular-import
+guard it provided is Stage 2's first task, below.
+
 **Done when:** one dependency tree, sub-second incremental dev rebuilds, all build variants
-(`gulp/build_variants.js`) still produce working artifacts, smoke test green.
+(`gulp/build_variants.js`) still produce working artifacts, smoke test green. **Met 2026-08-15**
 
 ## Stage 2 — TypeScript migration
 
@@ -152,6 +163,19 @@ doing the structural work first means doing the dangerous part blind.
 **Starting position is better than it looks:** `src/js` is already JSDoc-annotated and checked by
 `tsc --checkJs` with `strictFunctionTypes`, `noImplicitThis`, and `alwaysStrict` (see
 `src/js/tsconfig.json`). This is a conversion, not an introduction of types.
+
+**First task — restore the circular-import guard.** Stage 1 dropped `CircularDependencyPlugin`, which ran
+with `failOnError: true` on the dev build, because it hooks `compilation.hooks.optimizeModules` and Rspack
+does not implement that hook. Nothing replaced it. The gap is harmless while the module graph sits still —
+Stage 1 touched three `.js` files under `src/js`, all worker-URL changes, no import restructuring — but this
+stage moves modules wholesale, which is precisely what introduces cycles. The codebase is already
+cycle-prone: `core/global_registries.js:12`, `mods/mod_signals.js:10`, and `game/building_codes.js:46` each
+document a workaround for one. Restore the guard before the first conversion commit, not after.
+`madge --circular src/js` is the leading candidate, but size the task to *validate* it rather than assume
+it: madge resolves imports itself, and `src/js` has 1,942 extensionless relative specifiers that only
+resolve under bundler semantics, so an unconfigured run can report a clean graph it never actually parsed.
+Prove it fails on a deliberately introduced cycle before trusting it, and prefer configuring it once
+against the post-migration `.ts` layout over configuring it twice.
 
 **Order within the stage:** config and leaf modules → `src/js/core/` → `src/js/game/` systems and
 components → `src/js/states/` and UI. Keep `allowJs: true` throughout so the tree stays buildable at every

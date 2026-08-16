@@ -26,11 +26,20 @@ export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", 
 export const BUILD_DIR = join(REPO_ROOT, "build");
 export const ATLAS_DIR = join(REPO_ROOT, "res_built", "atlas");
 
-const BUILD_COMMAND = [
-    "cd gulp",
-    "NODE_OPTIONS=--openssl-legacy-provider yarn gulp build.prepare.dev",
-    "NODE_OPTIONS=--openssl-legacy-provider yarn gulp js.web-localhost.dev",
-    "NODE_OPTIONS=--openssl-legacy-provider yarn gulp html.web-localhost.dev",
+const BUILD_COMMAND_DEV = [
+    "yarn gulp build.prepare.dev",
+    "yarn gulp js.web-localhost.dev",
+    "yarn gulp html.web-localhost.dev",
+].join(" && ");
+
+// Reuses build.prepare.dev's assets deliberately: this stage replaces the JS
+// bundler, so the prod smoke test covers the prod JS bundle, not the prod CSS
+// or image pipelines. Run build.prepare.dev once, then this - it does not
+// re-clean build/.
+const BUILD_COMMAND_PROD = [
+    "yarn gulp build.prepare.dev",
+    "yarn gulp js.web-shapezio.prod",
+    "yarn gulp html.web-shapezio.prod",
 ].join(" && ");
 
 const MIME_TYPES = {
@@ -49,13 +58,17 @@ const MIME_TYPES = {
 };
 
 /**
- * Fails loudly if there is no usable dev build to test against.
+ * Fails loudly if there is no usable build to test against.
+ * @param {{ flavor?: "dev" | "prod" }} [options]
  * @returns {void}
  */
-export function assertBuildPresent() {
+export function assertBuildPresent(options = {}) {
+    const { flavor = "dev" } = options;
+    const command = flavor === "prod" ? BUILD_COMMAND_PROD : BUILD_COMMAND_DEV;
+
     for (const file of ["index.html", "bundle.js", "main.css"]) {
         if (!existsSync(join(BUILD_DIR, file))) {
-            throw new Error(`Missing build/${file}. Build the dev bundle first:\n  ${BUILD_COMMAND}`);
+            throw new Error(`Missing build/${file}. Build the ${flavor} bundle first:\n  ${command}`);
         }
     }
 
@@ -82,7 +95,14 @@ export function assertBuildPresent() {
  */
 export function startStaticServer(rootDir = BUILD_DIR) {
     const server = createServer((req, res) => {
-        const pathname = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
+        // gulp/html.js cachebusts prod asset URLs to /v/<commitHash>/<path>
+        // (buildutils.js:44-46); the real deploy strips that prefix at the
+        // server. Dev builds never emit it, so stripping unconditionally is
+        // safe and keeps one server serving both flavors.
+        const pathname = decodeURIComponent(new URL(req.url, "http://localhost").pathname).replace(
+            /^\/v\/[^/]+\//,
+            "/"
+        );
         const filePath = join(rootDir, pathname === "/" ? "index.html" : pathname);
 
         if (!filePath.startsWith(rootDir)) {
@@ -129,13 +149,13 @@ export function startStaticServer(rootDir = BUILD_DIR) {
 /**
  * Serves and opens the dev bundle. Returns as soon as navigation starts; use
  * waitForMainMenu to wait for boot.
- * @param {{ allowExternalRequests?: boolean, headless?: boolean }} [options]
+ * @param {{ allowExternalRequests?: boolean, headless?: boolean, flavor?: "dev" | "prod" }} [options]
  * @returns {Promise<GameSession>}
  */
 export async function launchGame(options = {}) {
-    const { allowExternalRequests = false, headless = true } = options;
+    const { allowExternalRequests = false, headless = true, flavor = "dev" } = options;
 
-    assertBuildPresent();
+    assertBuildPresent({ flavor });
 
     const server = await startStaticServer();
     const browser = await chromium.launch({ headless });
@@ -180,12 +200,14 @@ export async function launchGame(options = {}) {
 /**
  * Waits for the state manager to have entered MainMenuState. It sets
  * document.body.id = "state_" + key (core/state_manager.js:88), which is a
- * state-machine fact rather than a rendering timing guess.
+ * state-machine fact rather than a rendering timing guess - and which holds on
+ * a prod bundle too, where window.shapez does not exist.
  * @param {import("playwright").Page} page
- * @param {number} [timeoutMs]
+ * @param {{ timeoutMs?: number, expectDevGlobals?: boolean }} [options]
  * @returns {Promise<void>}
  */
-export async function waitForMainMenu(page, timeoutMs = 90000) {
+export async function waitForMainMenu(page, options = {}) {
+    const { timeoutMs = 90000, expectDevGlobals = true } = options;
     try {
         await page.waitForFunction(() => document.body.id === "state_MainMenuState", null, {
             timeout: timeoutMs,
@@ -195,22 +217,15 @@ export async function waitForMainMenu(page, timeoutMs = 90000) {
         // the main menu) with a misleading preloader-status message, so check
         // for them before falling back to that message alone.
         const diagnosis = await page
-            .evaluate(() => {
-                // window.shapez only exists on a dev build (exposeExports() is
-                // gated on G_IS_DEV || G_IS_STANDALONE - see modloader.js). A
-                // prod bundle would otherwise surface as an opaque TypeError
-                // deep inside a later page.evaluate() instead of here.
+            .evaluate(expectDev => {
                 if (!window.shapez) {
-                    return "window.shapez is undefined - this looks like a prod build, not a dev build.";
+                    // On a prod bundle this is expected, not a diagnosis:
+                    // exposeExports() is gated on G_IS_DEV || G_IS_STANDALONE
+                    // (modloader.js:111).
+                    return expectDev
+                        ? "window.shapez is undefined - this looks like a prod build, not a dev build."
+                        : null;
                 }
-
-                // fastGameEnter routes straight into InGameState, so
-                // document.body.id never becomes state_MainMenuState.
-                // noArtificialDelays can produce the same symptom by
-                // collapsing menu transition timings. Both are standard,
-                // commonly-set local-dev convenience flags from the
-                // gitignored config.local.js (see config.local.template.js),
-                // not a real boot failure.
                 const debug = window.shapez.globalConfig.debug;
                 const offenders = ["fastGameEnter", "noArtificialDelays"].filter(flag => debug[flag]);
                 if (offenders.length > 0) {
@@ -220,9 +235,8 @@ export async function waitForMainMenu(page, timeoutMs = 90000) {
                         "is why the main menu was never reached, not a preloader/atlas problem."
                     );
                 }
-
                 return null;
-            })
+            }, expectDevGlobals)
             .catch(() => "(could not inspect window.shapez to diagnose further)");
 
         // PreloadState hangs rather than throwing when resource loading fails, so
@@ -325,27 +339,34 @@ export async function loadFixtureGame(page, fixture) {
  * cannot leave that race in place.
  *
  * Fix: intercept one stage earlier, at "s7_warmup" (draw-only, no ticking
- * happens there), and in the same synchronous evaluate() call both freeze
- * the frame loop *and* force the s7->s10 transition ourselves by calling
- * the state's own stage10GameRunning() directly. That method only flips the
- * stage, dispatches signals, and resizes — it does not tick — so forcing it
- * ourselves reproduces the natural transition's visible effects without its
- * real-timed side tick. Because both actions happen inside that one
- * synchronous page.evaluate(), the primary race — the spurious tick that
- * would otherwise fall through in the same onRender callback that flips the
- * stage — is fully closed: there is no window for a real animation frame to
- * land between "flip the stage" and "freeze the loop" once we're the one
+ * happens there), and in the same synchronous waitForFunction predicate both
+ * freeze the frame loop *and* force the s7->s10 transition ourselves by
+ * calling the state's own stage10GameRunning() directly. That method only
+ * flips the stage, dispatches signals, and resizes — it does not tick — so
+ * forcing it ourselves reproduces the natural transition's visible effects
+ * without its real-timed side tick. Because both actions happen inside that
+ * one synchronous predicate invocation, the primary race — the spurious tick
+ * that would otherwise fall through in the same onRender callback that flips
+ * the stage — is fully closed: there is no window for a real animation frame
+ * to land between "flip the stage" and "freeze the loop" once we're the one
  * doing the flipping.
  *
- * That does not cover every window, though. Between the moment
- * waitForFunction's poll first *observes* `stage === "s7_warmup"` in the
- * page and the moment the follow-up evaluate() call above actually executes
- * there, there's an unavoidable IPC round-trip back to Node and out again.
- * On a slow or loaded runner, a real animation frame could in principle
- * land in that gap and let the natural transition (and its spurious tick)
- * fire first, before this function's evaluate() ever runs. This narrower
- * window is not closed by timing — it's closed by the `alreadyRunning`
- * check below: if the natural transition wins that race, this function
+ * Doing the work *inside* the predicate is the point, and is why this is one
+ * waitForFunction call rather than a poll followed by a separate evaluate().
+ * A two-call version leaves an IPC round-trip back to Node and out again
+ * between observing "s7_warmup" and acting on it, and on a slow or loaded
+ * runner several real animation frames can land in that gap.
+ *
+ * That does not cover every window, though. waitForFunction polls with
+ * `polling: "raf"` by default, so this predicate is itself a
+ * requestAnimationFrame callback, scheduled independently of the game's own
+ * AnimationFrame loop (core/animation_frame.js:46-60). In the single frame
+ * where warmupTimeSeconds first crosses zero, both callbacks are queued for
+ * that same frame, and whichever the browser happens to run first wins: if
+ * the game's onRender goes first, the natural transition and its spurious
+ * tick fire before this predicate ever observes "s7_warmup". That narrower
+ * window is not closed by timing — it's closed by the "already_running"
+ * branch below: if the natural transition wins that race, this function
  * throws instead of silently proceeding on a state that already contains an
  * uncontrolled tick. So the guarantee this function actually provides is
  * "either no spurious tick occurred, or you get a loud failure" — not "a
@@ -354,34 +375,36 @@ export async function loadFixtureGame(page, fixture) {
  * @returns {Promise<void>}
  */
 async function waitForGameRunning(page) {
-    await page.waitForFunction(
+    const handle = await page.waitForFunction(
         () => {
-            const state = window.shapez.GLOBAL_APP.stateMgr.currentState;
-            return state && (state.stage === "s7_warmup" || state.stage === "s10_gameRunning");
+            const app = window.shapez && window.shapez.GLOBAL_APP;
+            if (!app || !app.stateMgr || !app.stateMgr.currentState) {
+                return false;
+            }
+            const state = app.stateMgr.currentState;
+            if (state.stage === "s10_gameRunning") {
+                // The natural transition beat us here (e.g. a local
+                // config.local.js with debug.noArtificialDelays set, which zeroes
+                // globalConfig.warmupTimeSecondsRegular/Fast). The spurious tick
+                // has already happened by this point and cannot be undone.
+                return "already_running";
+            }
+            if (state.stage === "s7_warmup") {
+                // Freeze the frame loop *before* forcing the transition, so the
+                // transition itself cannot be followed by a real-timed tick either.
+                app.ticker.frameEmitted.removeAll();
+                app.ticker.bgFrameEmitted.removeAll();
+                state.stage10GameRunning();
+                return "transitioned";
+            }
+            return false;
         },
         null,
         { timeout: 60000 }
     );
 
-    const alreadyRunning = await page.evaluate(() => {
-        const app = window.shapez.GLOBAL_APP;
-        const state = app.stateMgr.currentState;
-        if (state.stage === "s10_gameRunning") {
-            // The natural transition beat us here (e.g. a local
-            // config.local.js with debug.noArtificialDelays set, which zeroes
-            // globalConfig.warmupTimeSecondsRegular/Fast). The spurious tick
-            // has already happened by this point and cannot be undone.
-            return true;
-        }
-        // Freeze the frame loop *before* forcing the transition, so the
-        // transition itself cannot be followed by a real-timed tick either.
-        app.ticker.frameEmitted.removeAll();
-        app.ticker.bgFrameEmitted.removeAll();
-        state.stage10GameRunning();
-        return false;
-    });
-
-    if (alreadyRunning) {
+    const result = await handle.jsonValue();
+    if (result === "already_running") {
         throw new Error(
             "Game reached s10_gameRunning before the harness could freeze the frame loop " +
                 "(check config.local.js for globalConfig.debug.noArtificialDelays or similar). " +

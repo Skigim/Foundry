@@ -9,11 +9,9 @@ on:
         branches:
             - master
 
-# The playwright package downloads browsers on install. Only browser-test needs
-# them, and the `setup` job runs yarn on Node 16, which playwright's engines
-# field (>=18) rejects. browser-test installs Chromium explicitly instead, and
-# `setup`'s yarn install ignores the engines check below - it never imports
-# playwright itself, so the mismatch is harmless there.
+# The playwright package downloads browsers on install, and only browser-test
+# needs them. Every job runs Node 22, so playwright's engines field (>=18) is
+# satisfied everywhere and no --ignore-engines escape hatch is needed.
 env:
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
 
@@ -32,26 +30,19 @@ jobs:
             - name: Setup Node
               uses: actions/setup-node@v2-beta
               with:
-                  node-version: 16.x
+                  node-version: 22.x
 
             - name: Checkout repo
               uses: actions/checkout@v2
 
             - name: Install Yarn Dependencies
-              run: |
-                  yarn --ignore-engines
-                  cd gulp/
-                  yarn
-                  cd ..
+              run: yarn
             - name: Lint
-              run: |
-                  yarn lint
+              run: yarn lint
             - name: TSLint
               run: |
-                  cd gulp
                   yarn gulp translations.fullBuild
                   yarn gulp localConfig.findOrCreate
-                  cd ..
                   yarn tslint
 
     test:
@@ -98,18 +89,9 @@ jobs:
                   key: runnable-texturepacker-jar-v1
 
             - name: Install Yarn Dependencies
-              run: |
-                  yarn
-                  cd gulp/
-                  yarn
-                  cd ..
+              run: yarn
 
-            # Webpack 4 dies on Node 17+ without the legacy OpenSSL provider.
-            # Scoped to the build steps so the tests still run on plain Node 22.
             - name: Build dev bundle
-              working-directory: gulp
-              env:
-                  NODE_OPTIONS: --openssl-legacy-provider
               run: |
                   yarn gulp build.prepare.dev
                   yarn gulp js.web-localhost.dev
@@ -147,9 +129,29 @@ jobs:
               run: |
                   test -f test/browser/boot.smoke.test.js
                   test -f test/browser/golden_save.test.js
+                  test -f test/browser/worker.smoke.test.js
+                  test -f test/browser/prod/boot.prod.smoke.test.js
 
             - name: Run browser tests
               run: yarn test:browser
+
+            # The prod bundle is where Stage 1's risk lives: three strip-block
+            # passes, a minifier, babel, and a blob:-URL script load. Built after
+            # the dev tests so both flavors get exercised from one asset build -
+            # this overwrites build/bundle.js and build/index.html on purpose.
+            - name: Build prod bundle
+              run: |
+                  yarn gulp js.web-shapezio.prod
+                  yarn gulp html.web-shapezio.prod
+
+            - name: Verify the prod bundle actually built
+              run: |
+                  test -f build/index.html
+                  test -f build/bundle.js
+                  grep -q "/v/" build/index.html
+
+            - name: Run prod browser tests
+              run: yarn test:browser:prod
 
     yaml-lint:
         name: yaml-lint
