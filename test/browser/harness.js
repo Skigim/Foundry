@@ -27,7 +27,6 @@ export const BUILD_DIR = join(REPO_ROOT, "build");
 export const ATLAS_DIR = join(REPO_ROOT, "res_built", "atlas");
 
 const BUILD_COMMAND_DEV = [
-    "cd gulp",
     "yarn gulp build.prepare.dev",
     "yarn gulp js.web-localhost.dev",
     "yarn gulp html.web-localhost.dev",
@@ -38,7 +37,6 @@ const BUILD_COMMAND_DEV = [
 // or image pipelines. Run build.prepare.dev once, then this - it does not
 // re-clean build/.
 const BUILD_COMMAND_PROD = [
-    "cd gulp",
     "yarn gulp build.prepare.dev",
     "yarn gulp js.web-shapezio.prod",
     "yarn gulp html.web-shapezio.prod",

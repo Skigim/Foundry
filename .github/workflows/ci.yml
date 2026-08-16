@@ -36,20 +36,13 @@ jobs:
               uses: actions/checkout@v2
 
             - name: Install Yarn Dependencies
-              run: |
-                  yarn
-                  cd gulp/
-                  yarn
-                  cd ..
+              run: yarn
             - name: Lint
-              run: |
-                  yarn lint
+              run: yarn lint
             - name: TSLint
               run: |
-                  cd gulp
                   yarn gulp translations.fullBuild
                   yarn gulp localConfig.findOrCreate
-                  cd ..
                   yarn tslint
 
     test:
@@ -96,14 +89,9 @@ jobs:
                   key: runnable-texturepacker-jar-v1
 
             - name: Install Yarn Dependencies
-              run: |
-                  yarn
-                  cd gulp/
-                  yarn
-                  cd ..
+              run: yarn
 
             - name: Build dev bundle
-              working-directory: gulp
               run: |
                   yarn gulp build.prepare.dev
                   yarn gulp js.web-localhost.dev
@@ -152,7 +140,6 @@ jobs:
             # the dev tests so both flavors get exercised from one asset build -
             # this overwrites build/bundle.js and build/index.html on purpose.
             - name: Build prod bundle
-              working-directory: gulp
               run: |
                   yarn gulp js.web-shapezio.prod
                   yarn gulp html.web-shapezio.prod

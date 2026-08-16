@@ -162,7 +162,7 @@ Learned by running code, not by assuming. Each one has already cost time once.
 - **Local `gulp build.prepare.dev` needs a system `ffmpeg` on PATH.** The `sounds.dev` gulp task shells out to
   it via `fluent-ffmpeg`; this Windows dev machine had none installed. CI is unaffected — both `browser-test`
   and the `CI`/`setup` job already `apt-get install ffmpeg` explicitly.
-- **FFmpeg 9.0 breaks `gulp/node_modules/fluent-ffmpeg/lib/capabilities.js`'s output parser.** Its
+- **FFmpeg 9.0 breaks `node_modules/fluent-ffmpeg/lib/capabilities.js`'s output parser.** Its
   `formatRegexp` hardcodes a single space between capability flags and the format name; ffmpeg 9.x's
   `-formats` output uses two, so every mux/demux capability check silently reports "not available" even when
   the codec is present — this breaks `sounds.sfxOptimize` with a misleading `Output format mp3 is not
@@ -173,7 +173,7 @@ Learned by running code, not by assuming. Each one has already cost time once.
   `/^\s*([D ])([E ]) ([^ ]+) +(.*)$/`; changing the literal space before `([^ ]+)` to ` +` makes it accept
   either spacing and works against both ffmpeg 6.x and 9.x. Verified: ffmpeg 9 prints ` DE  mp3` (two
   spaces) for `-formats`, while `-codecs` and `-encoders` still use one space, so only `formatRegexp` needs
-  it. **This lives in `gulp/node_modules` and is destroyed by any `yarn install` in `gulp/`** — expect to
+  it. **Following the single-tree migration in Stage 1, this lives in `node_modules/fluent-ffmpeg/lib/capabilities.js:18` and is destroyed by any root `yarn install`** — expect to
   reapply it, and treat a returning `Output format mp3 is not available` as exactly this and nothing more.
 - **The plan's documented Node-16 CI fallback (pin `playwright` to `1.40.1`) is unsafe and was not used.** It
   does fix the Node-16 `yarn install` engines-check failure, but that old a Playwright version predates
